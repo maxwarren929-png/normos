@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
-  <title>NormOS v2.0</title>
+  <title>NormOS v3.1</title>
   <link rel="stylesheet" href="css/base.css" />
   <link rel="stylesheet" href="css/boot.css" />
   <link rel="stylesheet" href="css/desktop.css" />
@@ -13,6 +13,8 @@
   <link rel="stylesheet" href="css/apps_extra.css" />
 </head>
 <body>
+
+  <!-- Boot screen -->
   <div id="boot-screen">
     <div class="boot-logo">NORM<span>OS</span></div>
     <div class="boot-subtitle">Personal Computing for the Slightly Confused</div>
@@ -22,6 +24,8 @@
       <div id="boot-status-text" class="boot-status">Initializing...</div>
     </div>
   </div>
+
+  <!-- Login screen -->
   <div id="login-screen">
     <div id="login-clock"></div>
     <div id="login-date"></div>
@@ -32,24 +36,31 @@
       <button class="login-btn" id="login-btn">Sign In →</button>
       <div class="login-hint">Hint: "norm" or just Enter</div>
     </div>
-    <div class="login-footer">NormOS v2.0 — More apps. More confusion. More lore.</div>
+    <div class="login-footer">NormOS v3.1 — More apps. More money. More danger.</div>
   </div>
+
+  <!-- Desktop -->
   <div id="desktop">
     <div class="desktop-bg" id="desktop-bg"></div>
     <div id="desktop-icons"></div>
     <div id="desktop-widgets"></div>
   </div>
+
+  <!-- Taskbar -->
   <div id="taskbar">
     <button id="start-btn">⬡ NORM</button>
     <div id="taskbar-windows"></div>
     <div id="taskbar-tray">
-      <span class="tray-icon" id="tray-net" title="NormNet">📡</span>
-      <span class="tray-icon" id="tray-sound" title="Audio">🔊</span>
+      <span class="tray-icon" id="tray-status" title="Status" style="display:none;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:0.68rem;cursor:pointer;"></span>
+      <span class="tray-icon" id="tray-net"     title="NormNet — Click to open Leaderboard">📡</span>
+      <span class="tray-icon" id="tray-sound"   title="Audio">🔊</span>
       <span class="tray-icon" id="tray-battery" title="Power">🔋</span>
-      <span class="tray-icon" id="tray-notifs" title="Notifications (0)">🔔</span>
+      <span class="tray-icon" id="tray-notifs"  title="Notifications (0)">🔔</span>
       <div id="taskbar-clock"></div>
     </div>
   </div>
+
+  <!-- Start menu -->
   <div id="start-menu">
     <div class="sm-header">
       <input class="sm-search" id="sm-search" type="text" placeholder="Search NormOS..." />
@@ -63,6 +74,8 @@
       <button class="sm-footer-btn" id="sm-shutdown-btn">⏻ Shut Down</button>
     </div>
   </div>
+
+  <!-- System overlays -->
   <div id="context-menu"></div>
   <div id="window-layer"></div>
   <div id="notification-container"></div>
@@ -71,20 +84,18 @@
     <div class="shutdown-sub">Please wait while NormOS pretends to save your files.</div>
   </div>
 
+  <!-- Core JS -->
   <script src="js/utils.js"></script>
   <script src="js/filesystem.js"></script>
   <script src="js/eventmanager.js"></script>
   <script src="js/windowmanager.js"></script>
   <script src="js/commandhandler.js"></script>
   <script src="js/network.js"></script>
+
+  <!-- Apps -->
   <script src="apps/terminal.js"></script>
   <script src="apps/fileexplorer.js"></script>
   <script src="apps/browser.js"></script>
-  <script src="apps/notepad.js"></script>
-  <script src="apps/mail.js"></script>
-  <script src="apps/news.js"></script>
-  <script src="apps/settings.js"></script>
-  <script src="apps/snake.js"></script>
   <script src="apps/chat.js"></script>
   <script src="apps/paint.js"></script>
   <script src="apps/normsheet.js"></script>
@@ -95,7 +106,37 @@
   <script src="apps/imagedrop.js"></script>
   <script src="apps/texteditor.js"></script>
   <script src="apps/stocks.js"></script>
+  <script src="apps/sysmon.js"></script>
+  <script src="apps/leaderboard.js"></script>
+  <script src="apps/shop.js"></script>
+
+  <!-- New apps (v3.1) -->
+  <script src="apps/normtok.js"></script>
+  <script src="apps/profile.js"></script>
+  <script src="apps/friends.js"></script>
+  <script src="apps/loans.js"></script>
+  <script src="apps/miner.js"></script>
+  <script src="apps/casino.js"></script>
+  <script src="apps/mail.js"></script>
+  <script src="apps/settings.js"></script>
+  <script src="apps/appstore.js"></script>
+  <!-- Browser page additions (after browser.js) -->
+  <script src="apps/browser_pages.js"></script>
+
+  <!-- Stubs for unbuilt apps (prevents crashes) -->
+  <script>
+    // MailApp is now real — loaded from apps/mail.js
+    const NewsApp     = { create: () => { const d = document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">📰</div><div>NormNews — Coming Soon</div>'; return d; } };
+    const NotepadApp  = { create: () => { const d = document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">📝</div><div>Notepad — Coming Soon</div>'; return d; } };
+    // SettingsApp is now real — loaded from apps/settings.js
+    const SnakeApp    = { create: () => { const d = document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">🐍</div><div>Snake — Coming Soon</div>'; return d; } };
+  </script>
+
+  <!-- Economy + OS (must be last) -->
   <script src="js/economy.js"></script>
   <script src="js/os.js"></script>
+  <!-- Terminal command additions (after CMD is created) -->
+  <script src="js/terminal_commands.js"></script>
+
 </body>
 </html>
