@@ -177,38 +177,32 @@ const OS = (() => {
     const statusEl = card.querySelector('#auth-status');
     const setStatus = (msg, color='var(--text3)') => { statusEl.textContent=msg; statusEl.style.color=color; };
 
-    // Listen for auth results from Network
-    const onAuthOk = (data) => {
-      clearInterval(ci);
-      cleanupListeners();
-      state.username = data.username;
-      saveState();
-      setStatus('✅ Authenticated!', '#4ade80');
-      loginEl.style.opacity = '0';
-      loginEl.style.transition = 'opacity 0.4s';
+    // ── Auth listeners ─────────────────────────────────────────────────────
+    const cleanup = () => {
+      Network.off('auth:ok',       onOk);
+      Network.off('auth:error',    onErr);
+      Network.off('auth:required', onReq);
+      Network.off('connected',     onConn);
+    };
+    const onOk = (data) => {
+      clearInterval(ci); cleanup();
+      state.username = data.username; saveState();
+      setStatus('✅ Signed in!', '#4ade80');
+      loginEl.style.opacity = '0'; loginEl.style.transition = 'opacity 0.4s';
       setTimeout(() => { loginEl.style.display = 'none'; showDesktop(); }, 400);
     };
-    const onAuthErr = (data) => {
+    const onErr = (data) => {
       setStatus('❌ ' + (data.message||'Error'), 'var(--red)');
       card.querySelector('#auth-password').value = '';
       card.querySelector('#auth-password').focus();
     };
-    const onAuthRequired = () => {
-      setStatus('Server connected — enter your credentials.', '#4ade80');
-    };
-    const onConnected = () => {
-      setStatus('Server connected — enter your credentials.', '#4ade80');
-    };
-    const cleanupListeners = () => {
-      Network.off('auth:ok', onAuthOk);
-      Network.off('auth:error', onAuthErr);
-      Network.off('auth:required', onAuthRequired);
-      Network.off('connected', onConnected);
-    };
-    Network.on('auth:ok', onAuthOk);
-    Network.on('auth:error', onAuthErr);
-    Network.on('auth:required', onAuthRequired);
-    Network.on('connected', onConnected);
+    const onReq  = () => setStatus('🟢 Server ready — enter your credentials.', '#4ade80');
+    const onConn = () => setStatus('🟢 Server ready — enter your credentials.', '#4ade80');
+
+    Network.on('auth:ok',       onOk);
+    Network.on('auth:error',    onErr);
+    Network.on('auth:required', onReq);
+    Network.on('connected',     onConn);
 
     const doSubmit = () => {
       const uname = (card.querySelector('#auth-username').value||'').trim();
@@ -216,12 +210,16 @@ const OS = (() => {
       if (!uname) { setStatus('Enter a username.', 'var(--red)'); return; }
       if (!pw)    { setStatus('Enter a password.', 'var(--red)'); return; }
       if (!Network.isConnected()) {
-        // Offline fallback — just enter desktop with the provided name
-        state.username = uname; saveState();
-        clearInterval(ci);
-        cleanupListeners();
-        loginEl.style.opacity='0'; loginEl.style.transition='opacity 0.4s';
-        setTimeout(()=>{ loginEl.style.display='none'; showDesktop(); },400);
+        // Server is waking up — queue the submit for when it connects
+        setStatus('⏳ Server waking up… will sign in automatically when ready.', '#f59e0b');
+        const onReady = () => {
+          Network.off('connected', onReady);
+          setStatus('Authenticating…', 'var(--text3)');
+          if (mode === 'login') Network.login(uname, pw);
+          else                  Network.signup(uname, pw);
+        };
+        Network.on('connected', onReady);
+        Network.connect();
         return;
       }
       setStatus('Authenticating…', 'var(--text3)');
@@ -234,8 +232,8 @@ const OS = (() => {
     card.querySelector('#auth-username').addEventListener('keydown', e => { if (e.key==='Enter') card.querySelector('#auth-password').focus(); });
     setTimeout(() => card.querySelector('#auth-username').focus(), 100);
 
-    if (Network.isConnected()) setStatus('Server connected — enter your credentials.', '#4ade80');
-    else setStatus('Connecting to server…', '#f59e0b');
+    if (Network.isConnected()) setStatus('🟢 Server ready — enter your credentials.', '#4ade80');
+    else setStatus('⏳ Connecting to server… (Render may take ~30s to wake)', '#f59e0b');
   };
 
   const login = () => document.getElementById('auth-submit')?.click();
