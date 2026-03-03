@@ -249,7 +249,16 @@ const LoansApp = {
       Network.on('bank:loan:repaid',   onLR);
       Network.on('bank:loan:defaulted',onLD);
       Network.on('bank:error',         onBE);
-      Network.send({type:'bank:get'});
+
+      // Request bank data — if already authenticated send now, otherwise wait for auth:ok
+      const requestBankData = () => Network.send({type:'bank:get'});
+      if (Network.isAuthenticated()) {
+        requestBankData();
+      } else {
+        const onAuth = () => { Network.off('auth:ok', onAuth); Network.off('welcome', onAuth); requestBankData(); };
+        Network.on('auth:ok', onAuth);
+        Network.on('welcome', onAuth);
+      }
 
       wrap._cleanup = () => {
         Network.off('bank:update',        onBU);
