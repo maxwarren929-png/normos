@@ -311,18 +311,13 @@ const LeaderboardApp = {
     Network.on('money:transfer:ok', onTransferOk);
     Network.on('virus:sent',        onVirusSent);
 
-    if (Network.isConnected()) {
+    if (Network.isConnected()&&Network.isAuthenticated()) {
       const s = Network.getState();
       myId = s.myId; onlineUsers = s.online || [];
       Network.send({ type: 'leaderboard:get' });
     }
 
-    // Sync economy every 5s
-    const syncTimer = setInterval(() => {
-      if (typeof Economy !== 'undefined' && Network.isConnected()) {
-        Network.send({ type: 'economy:sync', balance: Economy.state.balance, netWorth: Economy.totalValue() });
-      }
-    }, 5000);
+    // No economy:sync — server is source of truth for balances
 
     wrap._lbCleanup = () => {
       Network.off('welcome', onWelcome);
@@ -332,8 +327,7 @@ const LeaderboardApp = {
       Network.off('dm:history', onDmHistory);
       Network.off('money:transfer:ok', onTransferOk);
       Network.off('virus:sent', onVirusSent);
-      clearInterval(syncTimer);
-    };
+          };
 
     return wrap;
   },
