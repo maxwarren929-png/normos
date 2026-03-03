@@ -216,15 +216,19 @@ const OS = (() => {
       if (!uname) { setStatus('Enter a username.', 'var(--red)'); return; }
       if (!pw)    { setStatus('Enter a password.', 'var(--red)'); return; }
       if (!Network.isConnected()) {
-        // Offline fallback — just enter desktop with the provided name
-        state.username = uname; saveState();
-        clearInterval(ci);
-        cleanupListeners();
-        loginEl.style.opacity='0'; loginEl.style.transition='opacity 0.4s';
-        setTimeout(()=>{ loginEl.style.display='none'; showDesktop(); },400);
+        setStatus('\u23f3 Server waking up\u2026 (~30s on free tier). Will sign in automatically.', '#f59e0b');
+        // Store credentials and auto-submit once server connects
+        const _onReady = () => {
+          Network.off('connected', _onReady);
+          setStatus('Authenticating\u2026', 'var(--text3)');
+          if (mode === 'login') Network.login(uname, pw);
+          else                  Network.signup(uname, pw);
+        };
+        Network.on('connected', _onReady);
+        Network.connect(); // kick reconnect immediately
         return;
       }
-      setStatus('Authenticating…', 'var(--text3)');
+      setStatus('Authenticating\u2026', 'var(--text3)');
       if (mode === 'login') Network.login(uname, pw);
       else                  Network.signup(uname, pw);
     };
@@ -234,8 +238,8 @@ const OS = (() => {
     card.querySelector('#auth-username').addEventListener('keydown', e => { if (e.key==='Enter') card.querySelector('#auth-password').focus(); });
     setTimeout(() => card.querySelector('#auth-username').focus(), 100);
 
-    if (Network.isConnected()) setStatus('Server connected — enter your credentials.', '#4ade80');
-    else setStatus('Connecting to server…', '#f59e0b');
+    if (Network.isConnected()) setStatus('\u2705 Server connected — enter your credentials.', '#4ade80');
+    else setStatus('\u23f3 Connecting to server\u2026 Sign in when ready. (Render free tier takes ~30s to wake)', '#f59e0b');
   };
 
   const login = () => document.getElementById('auth-submit')?.click();
