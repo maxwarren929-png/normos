@@ -4,7 +4,7 @@
  */
 
 const Network = (() => {
-  const SERVER_URL      = 'wss://normos.onrender.com';
+  const SERVER_URL      = 'wss://normos-server.onrender.com';
   const RECONNECT_DELAY = 4000;
 
   let ws = null, connected = false, reconnectTimer = null;
@@ -337,3 +337,4 @@ const Network = (() => {
     buyStock, sellStock, ping, isConnected, isAuthenticated, getState, syncEconomy,
   };
 })();
+
