@@ -31,12 +31,9 @@
     <div id="login-date"></div>
     <div class="login-card">
       <div class="login-avatar">👤</div>
-      <div class="login-username" id="login-display-name">Norm</div>
-      <input class="login-input" type="password" id="login-pw" placeholder="Password" autocomplete="off" />
-      <button class="login-btn" id="login-btn">Sign In →</button>
-      <div class="login-hint">Hint: "norm" or just Enter</div>
+      <div class="login-username" id="login-display-name">NormOS v4.0</div>
     </div>
-    <div class="login-footer">NormOS v3.1 — More apps. More money. More danger.</div>
+    <div class="login-footer">NormOS v4.0 — Account system. Credit scores. Real consequences.</div>
   </div>
 
   <!-- Desktop -->
@@ -108,28 +105,26 @@
   <script src="apps/stocks.js"></script>
   <script src="apps/sysmon.js"></script>
   <script src="apps/leaderboard.js"></script>
-  <script src="apps/shop.js"></script>
 
-  <!-- New apps (v3.1) -->
+  <!-- v4.0 apps -->
   <script src="apps/normtok.js"></script>
-  <script src="apps/profile.js"></script>
-  <script src="apps/friends.js"></script>
-  <script src="apps/loans.js"></script>
+  <script src="apps/friends.js"></script><!-- Social (merged Profile+Friends+Messaging) -->
+  <script src="apps/loans.js"></script>  <!-- Central Bank -->
   <script src="apps/miner.js"></script>
   <script src="apps/casino.js"></script>
-  <script src="apps/mail.js"></script>
   <script src="apps/settings.js"></script>
-  <script src="apps/appstore.js"></script>
+  <script src="apps/appstore.js"></script><!-- Merged Hub+Shop -->
   <!-- Browser page additions (after browser.js) -->
   <script src="apps/browser_pages.js"></script>
 
-  <!-- Stubs for unbuilt apps (prevents crashes) -->
+  <!-- Stubs for removed/upcoming apps (prevents crashes) -->
   <script>
-    // MailApp is now real — loaded from apps/mail.js
-    const NewsApp     = { create: () => { const d = document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">📰</div><div>NormNews — Coming Soon</div>'; return d; } };
-    const NotepadApp  = { create: () => { const d = document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">📝</div><div>Notepad — Coming Soon</div>'; return d; } };
-    // SettingsApp is now real — loaded from apps/settings.js
-    const SnakeApp    = { create: () => { const d = document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">🐍</div><div>Snake — Coming Soon</div>'; return d; } };
+    // Removed apps — stub so any old references don't crash
+    const MailApp     = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">💬</div><div>NormMail removed — use Messaging in Social app</div>'; return d; }};
+    const NotepadApp  = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">✏️</div><div>Use NormEdit instead</div><button onclick="OS.apps.open(\'texteditor\')" style="margin-top:8px;padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer">Open NormEdit</button>'; return d; }};
+    const NewsApp     = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">📰</div><div>NormNews — Coming Soon</div>'; return d; }};
+    const SnakeApp    = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">🐍</div><div>Snake — Coming Soon</div>'; return d; }};
+    const ShopApp     = AppStoreApp; // Shop redirects to hub
   </script>
 
   <!-- Economy + OS (must be last) -->
