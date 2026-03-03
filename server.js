@@ -490,7 +490,7 @@ setInterval(() => {
   broadcast({type:'chat:message',channel:'#general',message:e});
 }, 60000+Math.random()*120000);
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n  NormOS Server v4.0 — ws://localhost:${PORT}`);
   console.log(`  💾 DB: ${DB_FILE}`);
   console.log(`  👥 Accounts loaded: ${accounts.size}`);
