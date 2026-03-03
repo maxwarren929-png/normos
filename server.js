@@ -11,7 +11,11 @@ const fs     = require('fs');
 const path   = require('path');
 
 const PORT = process.env.PORT || 3001;
-const DB_FILE = path.join(__dirname, 'normos_accounts.json');
+// Use DATA_DIR env var if set (e.g. a Render persistent disk mount like /data)
+// Otherwise falls back to same directory as server.js
+// NOTE: Render FREE tier has ephemeral disk — set up a Persistent Disk in Render dashboard
+//       and set DATA_DIR=/data to actually keep accounts across restarts.
+const DB_FILE = path.join(process.env.DATA_DIR || __dirname, 'normos_accounts.json');
 
 // ── Persistent storage ─────────────────────────────────────────────────────
 const saveAccounts = () => {
@@ -488,5 +492,12 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   console.log(`\n  NormOS Server v4.0 — ws://localhost:${PORT}`);
-  console.log(`  ⚠ All accounts wiped (fresh start per v4.0).\n`);
+  console.log(`  💾 DB: ${DB_FILE}`);
+  console.log(`  👥 Accounts loaded: ${accounts.size}`);
+  if (!process.env.DATA_DIR) {
+    console.log(`  ⚠  DATA_DIR not set. On Render free tier, accounts WILL be wiped on restart.`);
+    console.log(`     Set DATA_DIR=/data and add a Persistent Disk in Render dashboard to fix this.`);
+  } else {
+    console.log(`  ✅ Persistent storage at ${process.env.DATA_DIR}`);
+  }
 });
