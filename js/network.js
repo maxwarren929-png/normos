@@ -4,7 +4,7 @@
  */
 
 const Network = (() => {
-  const SERVER_URL      = 'wss://normos-server.onrender.com';
+  const SERVER_URL = 'wss://your-app.up.railway.app';
   const RECONNECT_DELAY = 4000;
 
   let ws = null, connected = false, reconnectTimer = null;
@@ -360,4 +360,5 @@ const Network = (() => {
     sendDm,getDmHistory,transferMoney,sendVirus,
     buyStock,sellStock,ping,isConnected,isAuthenticated,getState,syncEconomy,
   };
+
 })();
