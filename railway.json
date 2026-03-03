@@ -1,5 +1,5 @@
 {
-  "$schema": "https://railway.app/railway.schema.json",
+  "$schema": "normos-production.up.railway.app",
   "build": {
     "builder": "NIXPACKS"
   },
