@@ -7,60 +7,74 @@
 const { WebSocketServer, WebSocket } = require('ws');
 const http   = require('http');
 const crypto = require('crypto');
-const fs     = require('fs');
-const path   = require('path');
+const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3001;
-// Use DATA_DIR env var if set (e.g. a Render persistent disk mount like /data)
-// Otherwise falls back to same directory as server.js
-// NOTE: Render FREE tier has ephemeral disk — set up a Persistent Disk in Render dashboard
-//       and set DATA_DIR=/data to actually keep accounts across restarts.
-const DB_FILE = path.join(process.env.DATA_DIR || __dirname, 'normos_accounts.json');
 
-// ── Persistent storage ─────────────────────────────────────────────────────
-const saveAccounts = () => {
-  try {
-    const data = {};
-    for (const [key, acc] of accounts) {
-      // Don't save transient fields
-      data[key] = {
-        id: acc.id, username: acc.username, passHash: acc.passHash,
-        color: acc.color, balance: acc.balance, deposit: acc.deposit || 0,
-        creditScore: acc.creditScore || 0, loans: acc.loans || null,
-        hackCooldowns: acc.hackCooldowns || {},
-      };
-    }
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-  } catch (e) { console.error('Failed to save accounts:', e.message); }
+// ── Postgres storage ───────────────────────────────────────────────────────
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
+});
+
+const initDB = async () => {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      username_key TEXT PRIMARY KEY,
+      data         JSONB NOT NULL
+    )
+  `);
+  console.log('  ✅ Postgres table ready.');
 };
 
-const loadAccounts = () => {
+const loadAccounts = async () => {
   try {
-    if (!fs.existsSync(DB_FILE)) return;
-    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    for (const [key, acc] of Object.entries(data)) {
-      accounts.set(key, acc);
+    const res = await db.query('SELECT username_key, data FROM accounts');
+    for (const row of res.rows) {
+      accounts.set(row.username_key, row.data);
     }
-    console.log(`  ✅ Loaded ${accounts.size} accounts from disk.`);
+    console.log(`  ✅ Loaded ${accounts.size} accounts from Postgres.`);
   } catch (e) { console.error('Failed to load accounts:', e.message); }
 };
 
-// In-memory store — accounts now persist to disk
+const saveAccount = async (key, acc) => {
+  try {
+    const data = {
+      id: acc.id, username: acc.username, passHash: acc.passHash,
+      color: acc.color, balance: acc.balance, deposit: acc.deposit || 0,
+      creditScore: acc.creditScore || 0, loans: acc.loans || null,
+      hackCooldowns: acc.hackCooldowns || {},
+    };
+    await db.query(
+      `INSERT INTO accounts (username_key, data) VALUES ($1, $2)
+       ON CONFLICT (username_key) DO UPDATE SET data = $2`,
+      [key, JSON.stringify(data)]
+    );
+  } catch (e) { console.error('Failed to save account:', e.message); }
+};
+
+// Debounced per-account save
+const _saveTimers = {};
+const scheduleSave = (key) => {
+  if (!key) {
+    // Save all accounts (legacy call with no key — save everyone)
+    for (const [k, acc] of accounts) scheduleSave(k);
+    return;
+  }
+  if (_saveTimers[key]) return;
+  _saveTimers[key] = setTimeout(() => {
+    delete _saveTimers[key];
+    const acc = accounts.get(key);
+    if (acc) saveAccount(key, acc);
+  }, 1500);
+};
+
+// In-memory store — loaded from Postgres on startup
 const accounts = new Map(); // username.toLowerCase() → account object
 const clients  = new Map(); // ws → clientObj
 const channels = new Map();
 const dms      = new Map();
 let   msgCounter = 0;
-
-// Load persisted accounts immediately
-
-// Debounced save — batches rapid changes into one disk write every 1.5s
-let _saveTimer = null;
-const scheduleSave = () => {
-  if (_saveTimer) return;
-  _saveTimer = setTimeout(() => { _saveTimer = null; saveAccounts(); }, 1500);
-};
-loadAccounts();
 
 // ── Shared Stock Market ────────────────────────────────────────────────────
 const STOCKS = [
@@ -119,7 +133,7 @@ setInterval(() => {
     if ((acc.deposit||0) > 0) {
       const interest = acc.deposit * 0.005;
       acc.deposit += interest;
-      scheduleSave();
+      scheduleSave(acc.username.toLowerCase());
       const ws = getWsByUsername(acc.username);
       if (ws) sendTo(ws,{type:'bank:interest',amount:interest,newDeposit:acc.deposit});
     }
@@ -213,7 +227,7 @@ wss.on('connection', (ws) => {
         color:COLORS[accounts.size%COLORS.length],balance:10000,
         deposit:0,creditScore:0,loans:null,hackCooldowns:{}};
       accounts.set(uname.toLowerCase(),acc);
-      scheduleSave();
+      scheduleSave(uname.toLowerCase());
       completeLogin(ws,client,acc);
       return;
     }
@@ -251,7 +265,7 @@ wss.on('connection', (ws) => {
         const tacc=accounts.get((msg.to||'').toLowerCase());
         if (!tacc) { sendTo(ws,{type:'money:transfer:fail',reason:'User not found.'}); break; }
         acc.balance-=amt; tacc.balance+=amt;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         const tws=getWsByUsername(tacc.username);
         if (tws) sendTo(tws,{type:'money:received',from:acc.username,fromId:client.id,amount:amt,ts:ts()});
         sendTo(ws,{type:'money:transfer:ok',to:tacc.username,amount:amt,newBalance:acc.balance,ts:ts()});
@@ -272,7 +286,7 @@ wss.on('connection', (ws) => {
         const amt=parseFloat(msg.amount)||0;
         if (amt<=0||amt>acc.balance) { sendTo(ws,{type:'bank:error',message:'Invalid amount.'}); break; }
         acc.balance-=amt; acc.deposit=(acc.deposit||0)+amt;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:update',balance:acc.balance,deposit:acc.deposit,
           creditScore:acc.creditScore||0,loan:acc.loans||null,
           creditTier:getCreditTier(acc.creditScore||0)});
@@ -283,7 +297,7 @@ wss.on('connection', (ws) => {
         const amt=parseFloat(msg.amount)||0;
         if (amt<=0||amt>(acc.deposit||0)) { sendTo(ws,{type:'bank:error',message:'Invalid amount.'}); break; }
         acc.deposit-=amt; acc.balance+=amt;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:update',balance:acc.balance,deposit:acc.deposit,
           creditScore:acc.creditScore||0,loan:acc.loans||null,
           creditTier:getCreditTier(acc.creditScore||0)});
@@ -303,7 +317,7 @@ wss.on('connection', (ws) => {
         acc.loans={active:true,principal:amt,rate,termMs,
           borrowedAt:Date.now(),dueAt:Date.now()+termMs,totalDue:amt+amt*rate};
         acc.balance+=amt;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:loan:approved',loan:acc.loans,newBalance:acc.balance}); break;
       }
 
@@ -315,7 +329,7 @@ wss.on('connection', (ws) => {
         const onTime=Date.now()<=acc.loans.dueAt;
         acc.creditScore=Math.max(0,(acc.creditScore||0)+(onTime?50:-100));
         acc.loans=null;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:loan:repaid',onTime,creditScore:acc.creditScore,newBalance:acc.balance});
         broadcastLeaderboard(); break;
       }
@@ -325,7 +339,7 @@ wss.on('connection', (ws) => {
         acc.balance=0; acc.deposit=0;
         acc.creditScore=Math.max(0,(acc.creditScore||0)-200);
         acc.loans=null;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:loan:defaulted',creditScore:acc.creditScore,newBalance:0});
         broadcastLeaderboard(); break;
       }
@@ -338,7 +352,7 @@ wss.on('connection', (ws) => {
         const cost=price*msg.shares;
         if (cost>acc.balance) { sendTo(ws,{type:'market:trade:fail',reason:`Need $${fmt(cost)}.`}); break; }
         acc.balance-=cost;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         tradeVolume[msg.stockId]=(tradeVolume[msg.stockId]||0)+msg.shares;
         sendTo(ws,{type:'market:trade:ok',action:'BUY',stockId:msg.stockId,shares:msg.shares,price,cost,newBalance:acc.balance});
         broadcast({type:'market:activity',action:'BUY',username:acc.username,color:acc.color,
@@ -350,7 +364,7 @@ wss.on('connection', (ws) => {
         const price=stockPrices[msg.stockId];
         const rev=price*msg.shares;
         acc.balance+=rev;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         tradeVolume[msg.stockId]=(tradeVolume[msg.stockId]||0)-msg.shares*0.5;
         sendTo(ws,{type:'market:trade:ok',action:'SELL',stockId:msg.stockId,shares:msg.shares,price,revenue:rev,newBalance:acc.balance});
         broadcast({type:'market:activity',action:'SELL',username:acc.username,color:acc.color,
@@ -374,7 +388,7 @@ wss.on('connection', (ws) => {
         const tws=getWsById(msg.to);
         if (!tws) { sendTo(ws,{type:'virus:fail',reason:'Target offline.'}); break; }
         acc.balance-=cost;
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         acc.hackCooldowns[ck]=Date.now();
         sendTo(tws,{type:'virus:incoming',from:acc.username,fromId:client.id,virusType:vt,ts:ts()});
         sendTo(ws,{type:'virus:sent',to:clients.get(tws)?.username,virusType:vt,cost,ts:ts()});
@@ -388,11 +402,11 @@ wss.on('connection', (ws) => {
       case 'virus:damage': {
         const stolen=Math.min(Math.max(0,parseFloat(msg.stolen)||0),acc.balance);
         acc.balance=Math.max(0,acc.balance-stolen);
-        scheduleSave();
+        scheduleSave(client.username.toLowerCase());
         const aacc=accounts.get((msg.fromUsername||'').toLowerCase());
         if (aacc) {
           aacc.balance+=stolen;
-          scheduleSave();
+          scheduleSave(client.username.toLowerCase());
           const aws=getWsByUsername(aacc.username);
           if (aws) sendTo(aws,{type:'virus:loot',amount:stolen,from:acc.username});
         }
@@ -490,14 +504,17 @@ setInterval(() => {
   broadcast({type:'chat:message',channel:'#general',message:e});
 }, 60000+Math.random()*120000);
 
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n  NormOS Server v4.0 — ws://localhost:${PORT}`);
-  console.log(`  💾 DB: ${DB_FILE}`);
-  console.log(`  👥 Accounts loaded: ${accounts.size}`);
-  if (!process.env.DATA_DIR) {
-    console.log(`  ⚠  DATA_DIR not set. On Render free tier, accounts WILL be wiped on restart.`);
-    console.log(`     Set DATA_DIR=/data and add a Persistent Disk in Render dashboard to fix this.`);
+// ── Startup ───────────────────────────────────────────────────────────────
+(async () => {
+  if (!process.env.DATABASE_URL) {
+    console.warn('  ⚠  DATABASE_URL not set — accounts will not persist across restarts!');
   } else {
-    console.log(`  ✅ Persistent storage at ${process.env.DATA_DIR}`);
+    await initDB();
+    await loadAccounts();
   }
-});
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n  NormOS Server v4.0 — ws://localhost:${PORT}`);
+    console.log(`  👥 Accounts loaded: ${accounts.size}`);
+    console.log(`  💾 Storage: ${process.env.DATABASE_URL ? 'Postgres ✅' : 'in-memory only ⚠'}`);
+  });
+})();
