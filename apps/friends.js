@@ -198,7 +198,7 @@ const SocialApp = {
       };
 
       // Load history
-      if(typeof Network!=='undefined'&&Network.isConnected()){
+      if(typeof Network!=='undefined'&&Network.isConnected()&&Network.isAuthenticated()){
         Network.getDmHistory(dmTarget.id);
       }
 
@@ -209,7 +209,7 @@ const SocialApp = {
         const myState=typeof Network!=='undefined'?Network.getState():{};
         const tmpMsg={fromId:myState.myId,from:myState.username||'me',text:txt,file:attachedFile,ts:new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false})};
         appendDmMsg(tmpMsg);
-        if(typeof Network!=='undefined'&&Network.isConnected()){
+        if(typeof Network!=='undefined'&&Network.isConnected()&&Network.isAuthenticated()){
           Network.sendDm(dmTarget.id,txt,attachedFile);
         }
         attachedFile=null;
