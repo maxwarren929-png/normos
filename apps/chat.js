@@ -181,7 +181,7 @@ const ChatApp = {
     Network.on('online:update', onOnlineUpdate);
 
     // If already connected, populate from current state
-    if (Network.isConnected()) {
+    if (Network.isConnected()&&Network.isAuthenticated()) {
       const s = Network.getState();
       onlineUsers = (s.online || []).filter(u => u.username !== 'daemon.norm');
       channels = s.channels.length ? s.channels : channels;
@@ -237,7 +237,7 @@ const ChatApp = {
       Network.sendChat(activeChannel, text);
 
       // Echo locally if not connected (offline mode)
-      if (!Network.isConnected()) {
+      if (!Network.isConnected()&&Network.isAuthenticated()) {
         const s = Network.getState();
         appendMessage({
           username: s.username || 'norm',
