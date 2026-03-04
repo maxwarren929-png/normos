@@ -1,167 +1,150 @@
 /**
- * NormOS — apps/snake.js
- * Snake mini-game using Canvas.
- * Arrow keys / WASD to move. Space to pause.
+ * NormOS — apps/snake.js  (v4.0 — purchasable real game)
  */
-
 const SnakeApp = {
   create() {
     const wrap = document.createElement('div');
     wrap.className = 'snake-wrap';
 
-    const GRID = 20, SIZE = 14;
-    const W = GRID * SIZE, H = GRID * SIZE;
+    // Check if purchased
+    const INSTALLS_KEY = 'normos_appstore_installs';
+    const installs = (() => { try { return JSON.parse(localStorage.getItem(INSTALLS_KEY)||'{}'); } catch { return {}; } })();
+
+    if (!installs['snake']) {
+      wrap.style.cssText = 'display:flex;align-items:center;justify-content:center;height:100%;background:var(--bg1);flex-direction:column;gap:12px;';
+      wrap.innerHTML = `
+        <div style="font-size:3rem">🐍</div>
+        <div style="font-size:1rem;font-weight:bold;color:var(--text1)">Snake</div>
+        <div style="font-size:0.78rem;color:var(--text2)">Purchase Snake from NormHub to unlock.</div>
+        <button style="padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem;font-weight:600;" onclick="if(typeof OS!=='undefined')OS.apps.open('hub')">Open NormHub ($500)</button>`;
+      return wrap;
+    }
+
+    const GRID = 20, CELL = 18, W = GRID * CELL, H = GRID * CELL;
+    wrap.style.cssText = `display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#0a0a0a;user-select:none;`;
 
     wrap.innerHTML = `
-      <div class="snake-score-row">
-        <span>Score: <span class="snake-score-val" id="sn-score">0</span></span>
-        <span>High Score: <span class="snake-score-val" id="sn-hi">0</span></span>
+      <div style="font-size:0.75rem;color:#4ade80;font-family:monospace;margin-bottom:6px;">
+        🐍 SNAKE &nbsp;|&nbsp; Score: <span id="snake-score">0</span> &nbsp;|&nbsp; Hi: <span id="snake-hi">0</span>
       </div>
-      <canvas id="snake-canvas" width="${W}" height="${H}"></canvas>
-      <div class="snake-controls">
-        <button class="snake-btn" id="sn-start">▶ Start</button>
-        <button class="snake-btn secondary" id="sn-pause">⏸ Pause</button>
-      </div>
-      <div class="snake-message" id="sn-msg">Press Start to play — Arrow keys / WASD to move</div>
-    `;
+      <canvas id="snake-canvas" width="${W}" height="${H}" style="border:2px solid #4ade80;border-radius:4px;display:block;"></canvas>
+      <div id="snake-msg" style="font-size:0.8rem;color:#facc15;margin-top:8px;font-family:monospace;min-height:20px;text-align:center;"></div>
+      <div style="font-size:0.65rem;color:#374151;margin-top:4px;font-family:monospace;">Arrow keys / WASD to move · P to pause</div>`;
 
-    const canvas = wrap.querySelector('#snake-canvas');
-    const ctx    = canvas.getContext('2d');
-    const scoreEl= wrap.querySelector('#sn-score');
-    const hiEl   = wrap.querySelector('#sn-hi');
-    const msgEl  = wrap.querySelector('#sn-msg');
+    const canvas  = wrap.querySelector('#snake-canvas');
+    const ctx     = canvas.getContext('2d');
+    const scoreEl = wrap.querySelector('#snake-score');
+    const hiEl    = wrap.querySelector('#snake-hi');
+    const msgEl   = wrap.querySelector('#snake-msg');
 
-    let snake, dir, nextDir, food, score, running, paused, interval;
-    let highScore = parseInt(localStorage.getItem('normos_snake_hi') || '0');
-    hiEl.textContent = highScore;
+    const HI_KEY = 'normos_snake_hi';
+    let hi = parseInt(localStorage.getItem(HI_KEY)||'0');
+    hiEl.textContent = hi;
 
-    const COLORS = {
-      bg:       '#060910',
-      grid:     '#0d1520',
-      snake:    '#4f9eff',
-      snakeHd:  '#a8d4ff',
-      food:     '#34d399',
-      foodGlow: 'rgba(52,211,153,0.3)',
-    };
+    let snake, dir, nextDir, food, score, running, paused, gameLoop;
 
-    const draw = () => {
-      // Background
-      ctx.fillStyle = COLORS.bg;
-      ctx.fillRect(0, 0, W, H);
-
-      // Grid
-      ctx.strokeStyle = COLORS.grid;
-      ctx.lineWidth = 0.5;
-      for (let x = 0; x <= W; x += SIZE) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
-      for (let y = 0; y <= H; y += SIZE) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
-
-      if (!snake) return;
-
-      // Food
-      ctx.fillStyle = COLORS.foodGlow;
-      ctx.beginPath(); ctx.arc(food.x*SIZE+SIZE/2, food.y*SIZE+SIZE/2, SIZE*0.7, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = COLORS.food;
-      ctx.fillRect(food.x*SIZE+2, food.y*SIZE+2, SIZE-4, SIZE-4);
-
-      // Snake
-      snake.forEach((seg, i) => {
-        ctx.fillStyle = i === 0 ? COLORS.snakeHd : COLORS.snake;
-        ctx.globalAlpha = i === 0 ? 1 : Math.max(0.4, 1 - (i / snake.length) * 0.5);
-        ctx.fillRect(seg.x*SIZE+1, seg.y*SIZE+1, SIZE-2, SIZE-2);
-      });
-      ctx.globalAlpha = 1;
-    };
-
-    const placeFood = () => {
+    const rand = (n) => Math.floor(Math.random() * n);
+    const spawnFood = () => {
       let pos;
-      do { pos = { x: Math.floor(Math.random()*GRID), y: Math.floor(Math.random()*GRID) }; }
+      do { pos = {x:rand(GRID), y:rand(GRID)}; }
       while (snake.some(s => s.x===pos.x && s.y===pos.y));
-      food = pos;
+      return pos;
     };
 
     const init = () => {
-      snake   = [{ x:10, y:10 }, { x:9, y:10 }, { x:8, y:10 }];
-      dir     = { x:1, y:0 };
-      nextDir = { x:1, y:0 };
-      score   = 0;
-      scoreEl.textContent = '0';
-      placeFood();
-      draw();
-      msgEl.textContent = '';
+      snake   = [{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+      dir     = {x:1,y:0};
+      nextDir = {x:1,y:0};
+      food    = spawnFood();
+      score   = 0; running = true; paused = false;
+      scoreEl.textContent = 0;
+      msgEl.textContent   = '';
+      if (gameLoop) clearInterval(gameLoop);
+      gameLoop = setInterval(step, 120);
     };
 
     const step = () => {
       if (!running || paused) return;
-      dir = { ...nextDir };
-      const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+      dir = {...nextDir};
+      const head = {x: snake[0].x + dir.x, y: snake[0].y + dir.y};
 
       // Wall collision
-      if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) return gameOver();
+      if (head.x < 0 || head.x >= GRID || head.y < 0 || head.y >= GRID) { endGame(); return; }
       // Self collision
-      if (snake.some(s => s.x===head.x && s.y===head.y)) return gameOver();
+      if (snake.some(s => s.x===head.x && s.y===head.y)) { endGame(); return; }
 
       snake.unshift(head);
-      if (head.x===food.x && head.y===food.y) {
+      if (head.x === food.x && head.y === food.y) {
         score++;
         scoreEl.textContent = score;
-        if (score > highScore) { highScore = score; hiEl.textContent = highScore; localStorage.setItem('normos_snake_hi', highScore); }
-        placeFood();
+        if (score > hi) { hi = score; hiEl.textContent = hi; localStorage.setItem(HI_KEY, String(hi)); }
+        food = spawnFood();
       } else {
         snake.pop();
       }
       draw();
     };
 
-    const gameOver = () => {
+    const draw = () => {
+      ctx.fillStyle = '#0a0a0a';
+      ctx.fillRect(0, 0, W, H);
+
+      // Grid dots
+      ctx.fillStyle = '#111';
+      for (let x=0;x<GRID;x++) for (let y=0;y<GRID;y++) {
+        ctx.fillRect(x*CELL+CELL/2-1, y*CELL+CELL/2-1, 2, 2);
+      }
+
+      // Food
+      ctx.fillStyle = '#f87171';
+      ctx.beginPath();
+      ctx.arc(food.x*CELL+CELL/2, food.y*CELL+CELL/2, CELL/2-2, 0, Math.PI*2);
+      ctx.fill();
+
+      // Snake
+      snake.forEach((seg, i) => {
+        const t = i === 0 ? 1 : Math.max(0.3, 1 - i/snake.length * 0.7);
+        ctx.fillStyle = i===0 ? '#4ade80' : `rgba(74,222,128,${t})`;
+        const pad = i===0 ? 1 : 2;
+        ctx.fillRect(seg.x*CELL+pad, seg.y*CELL+pad, CELL-pad*2, CELL-pad*2);
+      });
+    };
+
+    const endGame = () => {
       running = false;
-      clearInterval(interval);
-      msgEl.textContent = `Game over! Score: ${score}. ${score >= 10 ? 'Not bad.' : score >= 5 ? 'Getting there.' : 'The daemon saw that.'}`;
-      // Flicker effect
-      ctx.fillStyle = 'rgba(248,113,113,0.15)';
+      clearInterval(gameLoop);
+      msgEl.textContent = `💀 Game Over! Score: ${score}  —  Press Enter or Space to restart`;
+      // Flash red
+      ctx.fillStyle = 'rgba(248,113,113,0.2)';
       ctx.fillRect(0,0,W,H);
     };
 
-    const startGame = () => {
-      clearInterval(interval);
-      running = true; paused = false;
-      init();
-      interval = setInterval(step, 130);
-    };
-
-    wrap.querySelector('#sn-start').addEventListener('click', startGame);
-    wrap.querySelector('#sn-pause').addEventListener('click', () => {
-      if (!running) return;
-      paused = !paused;
-      wrap.querySelector('#sn-pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
-      msgEl.textContent = paused ? 'Paused. The daemon is also waiting.' : '';
-    });
-
-    // Key handling — attach to document, cleaned up when window closes
     const onKey = (e) => {
-      if (!running) return;
-      const map = {
-        ArrowUp:   {x:0,y:-1}, ArrowDown: {x:0,y:1},
-        ArrowLeft: {x:-1,y:0}, ArrowRight:{x:1,y:0},
-        w: {x:0,y:-1}, s: {x:0,y:1}, a: {x:-1,y:0}, d: {x:1,y:0},
+      if (!document.body.contains(wrap)) { document.removeEventListener('keydown', onKey); clearInterval(gameLoop); return; }
+      const k = e.key;
+      if ((k==='Enter'||k===' ') && !running) { init(); return; }
+      if (k==='p'||k==='P') { paused=!paused; msgEl.textContent=paused?'⏸ Paused':''; return; }
+      const dirs = {
+        ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1}, ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0},
+        w:{x:0,y:-1}, s:{x:0,y:1}, a:{x:-1,y:0}, d:{x:1,y:0},
+        W:{x:0,y:-1}, S:{x:0,y:1}, A:{x:-1,y:0}, D:{x:1,y:0},
       };
-      const nd = map[e.key];
-      if (nd) {
-        // Prevent reversing
-        if (nd.x === -dir.x && nd.y === -dir.y) return;
-        nextDir = nd;
-        e.preventDefault();
-      }
-      if (e.key === ' ') { e.preventDefault(); wrap.querySelector('#sn-pause').click(); }
+      const nd = dirs[k];
+      if (nd && !(nd.x===-dir.x && nd.y===-dir.y)) { nextDir=nd; e.preventDefault(); }
     };
+
     document.addEventListener('keydown', onKey);
+    init(); draw();
 
-    // Cleanup
-    EventBus.on('window:closed', () => {
-      clearInterval(interval);
-      document.removeEventListener('keydown', onKey);
-    });
+    if (!document.getElementById('snake-styles')) {
+      const st = document.createElement('style');
+      st.id = 'snake-styles';
+      st.textContent = `.snake-wrap{outline:none;}`;
+      document.head.appendChild(st);
+    }
 
-    draw();
+    wrap.setAttribute('tabindex','0');
+    wrap.addEventListener('click', () => wrap.focus());
     return wrap;
-  },
+  }
 };
