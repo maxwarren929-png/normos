@@ -279,41 +279,62 @@ const StocksApp = {
         if (costEl) costEl.textContent = `Cost: $${Economy.fmt(price * q)}`;
       });
 
+      const doTrade = (type, shares) => {
+        const msgEl = mainEl.querySelector(`#sd-msg-${id}`);
+        if (typeof Network !== 'undefined' && Network.isConnected()) {
+          if (type === 'buy') Network.buyStock(id, shares);
+          else Network.sellStock(id, shares);
+          if (msgEl) { msgEl.textContent = 'Order sent…'; msgEl.style.color = 'var(--text3)'; }
+        } else {
+          const res = type === 'buy' ? Economy.buy(id, shares) : Economy.sell(id, shares);
+          if (msgEl) { msgEl.textContent = res.msg; msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)'; }
+          if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
+        }
+      };
+
       // Buy
       mainEl.querySelector(`#sd-buy-${id}`)?.addEventListener('click', () => {
-        const q   = Math.floor(parseFloat(qtyInput?.value) || 0);
-        const res = Economy.buy(id, q);
-        const msgEl = mainEl.querySelector(`#sd-msg-${id}`);
-        if (msgEl) {
-          msgEl.textContent = res.msg;
-          msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)';
-        }
-        if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
+        doTrade('buy', Math.floor(parseFloat(qtyInput?.value) || 0));
       });
 
       // Sell
       mainEl.querySelector(`#sd-sell-${id}`)?.addEventListener('click', () => {
-        const q   = Math.floor(parseFloat(qtyInput?.value) || 0);
-        const res = Economy.sell(id, q);
-        const msgEl = mainEl.querySelector(`#sd-msg-${id}`);
-        if (msgEl) { msgEl.textContent = res.msg; msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)'; }
-        if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
+        doTrade('sell', Math.floor(parseFloat(qtyInput?.value) || 0));
       });
 
       // Sell all
       mainEl.querySelector(`#sd-sellall-${id}`)?.addEventListener('click', () => {
         if (!pos) return;
-        const res = Economy.sell(id, pos.shares);
-        const msgEl = mainEl.querySelector(`#sd-msg-${id}`);
-        if (msgEl) { msgEl.textContent = res.msg; msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)'; }
-        if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
+        doTrade('sell', pos.shares);
       });
     };
 
     render();
 
-    // Clean up listener when window closes
-    EventBus.on('window:closed', () => { if (unsubscribe) { unsubscribe(); unsubscribe = null; } });
+    // Network trade result handlers
+    if (typeof Network !== 'undefined') {
+      const onTradeOk = (msg) => {
+        const s = Economy.getStock(msg.stockId);
+        const label = msg.action === 'BUY' ? `Bought ${msg.shares} ${msg.stockId}` : `Sold ${msg.shares} ${msg.stockId}`;
+        if (typeof OS !== 'undefined') OS.notify(s?.icon || '📈', 'NormStock', `${label} @ $${msg.price.toFixed(2)}`, 3000);
+        // Re-render current detail if it's the traded stock
+        if (selectedId === msg.stockId) renderDetail(msg.stockId);
+        renderSidebar();
+      };
+      const onTradeFail = (msg) => {
+        if (typeof OS !== 'undefined') OS.notify('❌', 'NormStock', msg.reason || 'Trade failed', 3000);
+      };
+      Network.on('market:trade:ok', onTradeOk);
+      Network.on('market:trade:fail', onTradeFail);
+      EventBus.on('window:closed', () => {
+        Network.off('market:trade:ok', onTradeOk);
+        Network.off('market:trade:fail', onTradeFail);
+        if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+      });
+    } else {
+      // Clean up listener when window closes
+      EventBus.on('window:closed', () => { if (unsubscribe) { unsubscribe(); unsubscribe = null; } });
+    }
 
     return wrap;
   }
