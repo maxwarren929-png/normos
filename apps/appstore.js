@@ -1,242 +1,199 @@
 /**
- * NormOS — apps/normshop.js
- * NormShop: Buy hacks, backgrounds, and other upgrades
+ * NormOS — apps/appstore.js
+ * NormHub App Store
  */
-
 const AppStoreApp = {
   create() {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'display:flex;height:100%;background:var(--bg1);color:var(--text1);font-family:var(--font-mono,monospace);overflow:hidden;';
+    wrap.className = 'appstore-wrap';
+    const iid = Math.random().toString(36).slice(2, 6);
+    const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const fmt = (n) => Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const INSTALLS_KEY = 'normos_appstore_installs';
+    const loadInstalls = () => { try { return JSON.parse(localStorage.getItem(INSTALLS_KEY) || '{}'); } catch { return {}; } };
+    const saveInstalls = (i) => { try { localStorage.setItem(INSTALLS_KEY, JSON.stringify(i)); } catch {} };
 
-    const getUnlocks = () => { try { return JSON.parse(localStorage.getItem('normos_unlocks') || '[]'); } catch { return []; } };
-    const addUnlock  = (id) => { const u=getUnlocks(); if(!u.includes(id)){u.push(id);try{localStorage.setItem('normos_unlocks',JSON.stringify(u));}catch{}} };
-    const hasUnlock  = (id) => getUnlocks().includes(id);
-    const fmt = (n) => '$' + Number(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+    let installs = loadInstalls();
+    let activeCategory = 'featured';
+    let searchQuery = '';
 
-    const CATEGORIES = ['All','🦠 Hacks','🖼 Backgrounds','⚙️ Upgrades'];
-
-    const ITEMS = [
-      // ── Hacks ────────────────────────────────────────────────────────────────
-      {
-        id:'virus_generic', cat:'🦠 Hacks', name:'Generic Virus', icon:'🦠',
-        price:0, desc:'Basic balance drain (5%). Comes free with your account.',
-        free:true,
-      },
-      {
-        id:'virus_glitch', cat:'🦠 Hacks', name:'Glitch Bomb', icon:'👾',
-        price:800, desc:'Causes screen glitch on target + 2% drain. Annoying and stylish.',
-      },
-      {
-        id:'virus_miner', cat:'🦠 Hacks', name:'Crypto Miner', icon:'⛏️',
-        price:2500, desc:'Secretly mines from target for 15 seconds, draining 10% over time.',
-      },
-      {
-        id:'virus_ransomware', cat:'🦠 Hacks', name:'Ransomware', icon:'🔐',
-        price:8000, desc:'Heavy instant hit — drains 25% of target\'s balance. Use wisely.',
-      },
-      // ── Backgrounds ──────────────────────────────────────────────────────────
-      {
-        id:'bg_matrix', cat:'🖼 Backgrounds', name:'Matrix Rain', icon:'🟩',
-        price:500, desc:'Animated green code rain. Yes, we went there.',
-        bgClass:'wp-matrix',
-      },
-      {
-        id:'bg_synthwave', cat:'🖼 Backgrounds', name:'Synthwave Sunset', icon:'🌅',
-        price:750, desc:'Neon purple and pink retro grid. For when you feel like the 80s.',
-        bgClass:'wp-synthwave',
-      },
-      {
-        id:'bg_space', cat:'🖼 Backgrounds', name:'Deep Space', icon:'🌌',
-        price:600, desc:'Starfield with slow nebula drift. Very calming. Very expensive.',
-        bgClass:'wp-space',
-      },
-      {
-        id:'bg_rain', cat:'🖼 Backgrounds', name:'Rainy Window', icon:'🌧️',
-        price:400, desc:'Cozy rain streaks on a dark window. Perfect for the vibe.',
-        bgClass:'wp-rain',
-      },
-      // ── Upgrades ────────────────────────────────────────────────────────────
-      {
-        id:'firewall_basic', cat:'⚙️ Upgrades', name:'Basic Firewall', icon:'🔥',
-        price:1200, desc:'Blocks ALL incoming hacks for 10 minutes. One-time use per purchase.',
-        consumable:true,
-      },
-      {
-        id:'interest_boost', cat:'⚙️ Upgrades', name:'Interest Booster', icon:'📈',
-        price:3000, desc:'Doubles your deposit interest rate for 1 hour. Stack your gains.',
-        consumable:true,
-      },
-      {
-        id:'hack_cooldown_reset', cat:'⚙️ Upgrades', name:'Cooldown Reset', icon:'⏱️',
-        price:500, desc:'Instantly resets all your hack cooldowns. Strike again immediately.',
-        consumable:true,
-      },
+    const APPS = [
+      { id:'terminal',    name:'Terminal',         icon:'🖥️', cat:'system',  price:0,    rating:4.8, reviews:2341, desc:'Bash-like terminal with secrets, lore commands, and sudo weirdness.', publisher:'NormOS Core', builtIn:true, appId:'terminal' },
+      { id:'stocks',      name:'NormStock',        icon:'📈', cat:'finance', price:0,    rating:4.9, reviews:8821, desc:'Real-time shared stock market. Your trades move prices for everyone.', publisher:'NormOS Core', builtIn:true, appId:'stocks' },
+      { id:'casino',      name:'NormCasino',       icon:'🎰', cat:'games',   price:0,    rating:4.7, reviews:5512, desc:'Slots, blackjack, and coinflip. Real balance. Real losses.', publisher:'NormOS Core', builtIn:true, appId:'casino' },
+      { id:'normtok',     name:'NormTok',          icon:'📱', cat:'social',  price:0,    rating:4.5, reviews:3201, desc:'Post short thoughts. Like and tip posts with real money.', publisher:'NormOS Core', builtIn:true, appId:'normtok' },
+      { id:'miner',       name:'NormMiner',        icon:'⛏️', cat:'finance', price:0,    rating:4.2, reviews:1822, desc:'Passive NormCoin mining while the app is open.', publisher:'NormOS Core', builtIn:true, appId:'miner' },
+      { id:'chat',        name:'NormChat',         icon:'💬', cat:'social',  price:0,    rating:4.6, reviews:9001, desc:'Multiplayer chat with channels and DMs.', publisher:'NormOS Core', builtIn:true, appId:'chat' },
+      { id:'bank',        name:'NormBank Central', icon:'🏦', cat:'finance', price:0,    rating:4.5, reviews:2800, desc:'Deposits, loans, credit score, interest. Central banking for NormOS.', publisher:'NormBank Corp', builtIn:true, appId:'bank' },
+      { id:'mail',        name:'NormMail',         icon:'📧', cat:'social',  price:0,    rating:4.4, reviews:1500, desc:'Real email between online users. Send money as attachments.', publisher:'NormOS Core', builtIn:true, appId:'mail' },
+      { id:'paint',       name:'NormPaint',        icon:'🎨', cat:'creative',price:0,    rating:4.3, reviews:2100, desc:'Canvas drawing app with brushes and fill tool.', publisher:'NormOS Core', builtIn:true, appId:'paint' },
+      { id:'leaderboard', name:'Leaderboard',      icon:'🏆', cat:'social',  price:0,    rating:4.7, reviews:6200, desc:'Global wealth rankings. Send money or viruses directly from the list.', publisher:'NormOS Core', builtIn:true, appId:'leaderboard' },
+      { id:'firewall',    name:'NormFirewall',     icon:'🛡', cat:'system',  price:10000,rating:4.9, reviews:1203, desc:'Blocks ALL hacks for 5 minutes. Activates immediately on purchase.', publisher:'NormSec Inc', builtIn:false, appId:'firewall' },
+      { id:'snake',       name:'Snake',            icon:'🐍', cat:'games',   price:500,  rating:4.5, reviews:2800, desc:'Classic snake game. Purchase to unlock.', publisher:'NormGame Studios', builtIn:false, appId:'snake' },
+      { id:'cryptopet',   name:'CryptoPet',        icon:'🐱', cat:'games',   price:200,  rating:4.6, reviews:4400, desc:'Desktop tamagotchi. Feed it NormCoin. Neglect it and it judges you publicly.', publisher:'PetDev Corp', builtIn:false, appId:'miner' },
+      { id:'voidtracker', name:'VOID Tracker Pro', icon:'🌑', cat:'finance', price:500,  rating:3.2, reviews:891,  desc:'Real-time VoidToken alerts. Crash predictions (60% wrong). Panic button included.', publisher:'VoidCorp Analytics', builtIn:false, appId:'stocks' },
+      { id:'normdate',    name:'NormDate',         icon:'💘', cat:'social',  price:0,    rating:2.1, reviews:43,   desc:'Dating app for NormOS users. Matched by net worth. Currently 2 users.', publisher:'NormDate LLC', builtIn:false, appId:'leaderboard' },
+      { id:'normdocs',    name:'NormDocs',         icon:'📄', cat:'system',  price:150,  rating:3.8, reviews:234,  desc:'Create and edit documents. Exports as .normdoc which nothing else can open.', publisher:'NormSoft', builtIn:false, appId:'texteditor' },
     ];
 
-    let activeCategory = 'All';
-    let msgMap = {};
+    const CATS = [
+      { id:'featured', label:'⭐ Featured' },
+      { id:'games',    label:'🎮 Games' },
+      { id:'finance',  label:'💰 Finance' },
+      { id:'social',   label:'👥 Social' },
+      { id:'creative', label:'🎨 Creative' },
+      { id:'system',   label:'⚙️ System' },
+    ];
 
-    const render = () => {
-      const balance = typeof Economy !== 'undefined' ? Economy.state.balance : 0;
-      wrap.innerHTML = `
-        <div style="width:160px;border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;">
-          <div style="padding:12px 14px;font-size:0.9rem;font-weight:bold;color:var(--accent);border-bottom:1px solid var(--border);">🛒 NormShop</div>
-          ${CATEGORIES.map(c=>`
-            <div class="nshop-nav" data-cat="${esc(c)}" style="padding:9px 14px;cursor:pointer;font-size:0.78rem;
-              color:${activeCategory===c?'var(--text1)':'var(--text2)'};
-              background:${activeCategory===c?'var(--bg2)':'transparent'};
-              border-bottom:1px solid var(--border);">${esc(c)}</div>
-          `).join('')}
-          <div style="padding:12px 14px;margin-top:8px;border-top:1px solid var(--border);">
-            <div style="font-size:0.62rem;color:var(--text3);margin-bottom:3px;">YOUR BALANCE</div>
-            <div style="font-size:0.85rem;font-weight:bold;color:#4ade80;" id="nshop-bal">${fmt(balance)}</div>
+    wrap.innerHTML = `
+      <div class="as-layout">
+        <div class="as-sidebar">
+          <div class="as-logo">🏪 NormHub</div>
+          <input class="as-search" id="as-search-${iid}" placeholder="Search apps..." />
+          <div class="as-nav">${CATS.map(c => `<div class="as-nav-item ${c.id === activeCategory ? 'active' : ''}" data-cat="${c.id}">${c.label}</div>`).join('')}</div>
+          <div class="as-balance-box">
+            <div style="font-size:0.6rem;color:var(--text3);">Your Balance</div>
+            <div class="as-balance-val" id="as-bal-${iid}">$0.00</div>
           </div>
         </div>
-        <div style="flex:1;overflow-y:auto;padding:16px;">
-          <div style="font-size:0.85rem;font-weight:bold;color:var(--text1);margin-bottom:14px;">${activeCategory === 'All' ? '🛒 All Items' : activeCategory}</div>
-          <div id="nshop-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;"></div>
+        <div class="as-main" id="as-main-${iid}"></div>
+      </div>`;
+
+    const mainEl = wrap.querySelector(`#as-main-${iid}`);
+    const balEl  = wrap.querySelector(`#as-bal-${iid}`);
+    const refreshBal = () => { if (typeof Economy !== 'undefined') balEl.textContent = '$' + fmt(Economy.state.balance); };
+    refreshBal();
+
+    wrap.querySelector(`#as-search-${iid}`)?.addEventListener('input', function() { searchQuery = this.value.toLowerCase(); renderMain(); });
+    wrap.querySelectorAll('.as-nav-item').forEach(el => {
+      el.addEventListener('click', () => {
+        wrap.querySelectorAll('.as-nav-item').forEach(e => e.classList.remove('active'));
+        el.classList.add('active');
+        activeCategory = el.dataset.cat;
+        searchQuery = '';
+        wrap.querySelector(`#as-search-${iid}`).value = '';
+        renderMain();
+      });
+    });
+
+    const stars = (r) => { const full = Math.floor(r), half = r % 1 >= 0.5; return '★'.repeat(full) + (half ? '½' : '') + '☆'.repeat(5 - Math.ceil(r)); };
+
+    const renderMain = () => {
+      let apps = searchQuery
+        ? APPS.filter(a => a.name.toLowerCase().includes(searchQuery) || a.desc.toLowerCase().includes(searchQuery))
+        : activeCategory === 'featured' ? APPS : APPS.filter(a => a.cat === activeCategory);
+
+      mainEl.innerHTML = `<div class="as-content">
+        ${activeCategory === 'featured' && !searchQuery ? `
+          <div class="as-featured-banner">
+            <div class="as-banner-title">🎰 NormCasino is live</div>
+            <div class="as-banner-sub">Slots • Blackjack • Coinflip — real balance, real consequences</div>
+            <button class="as-banner-btn" onclick="if(typeof OS!=='undefined')OS.apps.open('casino')">Open Now</button>
+          </div>` : ''}
+        <div class="as-section-title">${searchQuery ? 'Results for "' + esc(searchQuery) + '"' : (CATS.find(c => c.id === activeCategory)?.label || '')}</div>
+        <div class="as-app-grid">
+          ${apps.map(app => {
+            const isInstalled = app.builtIn || installs[app.id];
+            return `<div class="as-app-card">
+              <div class="as-app-icon">${app.icon}</div>
+              <div class="as-app-info">
+                <div class="as-app-name">${esc(app.name)}</div>
+                <div class="as-app-publisher">${esc(app.publisher)}</div>
+                <div class="as-app-stars">${stars(app.rating)} <span style="color:var(--text3)">(${Number(app.reviews).toLocaleString()})</span></div>
+                <div class="as-app-desc">${esc(app.desc)}</div>
+              </div>
+              <div class="as-app-actions">
+                ${isInstalled && app.appId
+                  ? `<button class="as-open-btn" data-openapp="${app.appId}">Open</button>`
+                  : isInstalled
+                    ? `<span class="as-installed-badge">✓ Installed</span>`
+                    : `<button class="as-buy-btn" data-appid="${app.id}" data-price="${app.price}">${app.price === 0 ? 'Get' : '$' + fmt(app.price)}</button>`}
+              </div>
+            </div>`;
+          }).join('')}
+          ${!apps.length ? '<div class="as-empty">No apps found.</div>' : ''}
         </div>
-      `;
+      </div>`;
 
-      wrap.querySelectorAll('.nshop-nav').forEach(el => {
-        el.addEventListener('click', () => { activeCategory = el.dataset.cat; render(); });
+      mainEl.querySelectorAll('.as-open-btn').forEach(btn => {
+        btn.addEventListener('click', () => { if (typeof OS !== 'undefined') OS.apps.open(btn.dataset.openapp); });
       });
-
-      const grid = wrap.querySelector('#nshop-grid');
-      const visible = ITEMS.filter(item => activeCategory === 'All' || item.cat === activeCategory);
-
-      visible.forEach(item => {
-        const owned = hasUnlock(item.id);
-        const canAfford = balance >= item.price;
-        const card = document.createElement('div');
-        card.style.cssText = `background:var(--bg2);border:1px solid ${owned?'#4ade80':canAfford?'var(--border)':'var(--border)'};border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:8px;`;
-        card.innerHTML = `
-          <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:1.8rem;">${item.icon}</span>
-            <div>
-              <div style="font-size:0.82rem;font-weight:bold;color:var(--text1);">${esc(item.name)}</div>
-              <div style="font-size:0.62rem;color:var(--text3);">${item.cat}</div>
-            </div>
-          </div>
-          <div style="font-size:0.72rem;color:var(--text2);line-height:1.5;">${esc(item.desc)}</div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:auto;">
-            <span style="font-size:0.85rem;font-weight:bold;color:${item.price===0?'#4ade80':'#f59e0b'};">${item.price===0?'FREE':fmt(item.price)}</span>
-            ${owned && !item.consumable
-              ? `<span style="font-size:0.72rem;color:#4ade80;font-weight:bold;">✅ Owned</span>`
-              : `<button class="nshop-buy-btn" data-id="${item.id}" style="padding:5px 14px;background:${canAfford||item.price===0?'var(--accent)':'var(--bg3)'};color:${canAfford||item.price===0?'#000':'var(--text3)'};border:none;border-radius:5px;cursor:${canAfford||item.price===0?'pointer':'not-allowed'};font-size:0.72rem;font-weight:bold;font-family:inherit;">
-                ${item.consumable?'🛒 Use':'🛒 Buy'}
-              </button>`
-            }
-          </div>
-          <div class="nshop-msg" data-id="${item.id}" style="font-size:0.68rem;min-height:16px;color:#4ade80;"></div>
-        `;
-        grid.appendChild(card);
-      });
-
-      grid.querySelectorAll('.nshop-buy-btn').forEach(btn => {
+      mainEl.querySelectorAll('.as-buy-btn').forEach(btn => {
         btn.addEventListener('click', () => {
-          const item = ITEMS.find(i => i.id === btn.dataset.id);
-          if (!item) return;
-          const msgEl = grid.querySelector(`.nshop-msg[data-id="${item.id}"]`);
-          const bal = typeof Economy !== 'undefined' ? Economy.state.balance : 0;
-
-          if (item.price === 0 || item.free) {
-            addUnlock(item.id);
-            if (msgEl) { msgEl.textContent = '✅ Added to your arsenal!'; msgEl.style.color = '#4ade80'; }
-            setTimeout(render, 800);
-            return;
+          const appId = btn.dataset.appid;
+          const price = parseFloat(btn.dataset.price);
+          const appDef = APPS.find(a => a.id === appId);
+          if (!appDef) return;
+          if (price > 0) {
+            const bal = (typeof Economy !== 'undefined') ? Economy.state.balance : 0;
+            if (bal < price) { if (typeof OS !== 'undefined') OS.notify('🏪', 'NormHub', 'Insufficient funds. Need $' + fmt(price)); return; }
+            if (!confirm('Purchase ' + appDef.name + ' for $' + fmt(price) + '?')) return;
+            if (typeof Economy !== 'undefined') { Economy.state.balance -= price; Economy.save(); if (typeof Economy.updateWalletDisplay === 'function') Economy.updateWalletDisplay(); }
+            refreshBal();
           }
-
-          if (bal < item.price) {
-            if (msgEl) { msgEl.textContent = `❌ Need ${fmt(item.price)}`; msgEl.style.color = '#f87171'; }
-            return;
+          // Firewall: activates immediately, consumable — don't mark as installed
+          if (appId === 'firewall') {
+            const until = Date.now() + 5 * 60 * 1000;
+            try { localStorage.setItem('normos_firewall_until', String(until)); } catch {}
+            if (typeof OS !== 'undefined') OS.notify('🛡', 'NormFirewall', '🔥 ACTIVE — All hacks blocked for 5 minutes!');
+            renderMain(); return;
           }
-
-          // Deduct balance
-          if (typeof Economy !== 'undefined') { Economy.state.balance -= item.price; Economy.save(); Economy.updateWalletDisplay(); }
-          if (typeof Network !== 'undefined' && Network.isConnected()) {
-            Network.send({ type: 'shop:purchase', itemId: item.id, price: item.price });
+          installs[appId] = true;
+          saveInstalls(installs);
+          if (typeof OS !== 'undefined') OS.notify('🏪', 'NormHub', appDef.name + ' installed!');
+          if (appId === 'snake') {
+            if (typeof OS !== 'undefined') OS.apps.open('snake');
+          } else if (appDef.appId && typeof OS !== 'undefined') {
+            OS.apps.open(appDef.appId);
           }
-
-          // Apply effect
-          if (item.bgClass) {
-            try { localStorage.setItem('normos_wallpaper', item.bgClass); } catch {}
-            const bg = document.getElementById('desktop-bg');
-            if (bg) bg.className = 'desktop-bg ' + item.bgClass;
-          }
-
-          if (item.id === 'firewall_basic') {
-            try { localStorage.setItem('normos_firewall_until', String(Date.now() + 600000)); } catch {}
-            if (typeof OS !== 'undefined') OS.notify('🔥','Firewall','Active for 10 minutes!');
-          }
-
-          if (item.id === 'interest_boost') {
-            try { localStorage.setItem('normos_interest_boost_until', String(Date.now() + 3600000)); } catch {}
-            if (typeof OS !== 'undefined') OS.notify('📈','Interest Boost','Double interest for 1 hour!');
-          }
-
-          if (item.id === 'hack_cooldown_reset') {
-            // Clear all hack cooldown timestamps
-            try {
-              const keys = Object.keys(localStorage).filter(k => k.startsWith('normos_hackcd_'));
-              keys.forEach(k => localStorage.removeItem(k));
-            } catch {}
-            // Tell server to reset our cooldowns
-            if (typeof Network !== 'undefined') Network.send({ type: 'hack:cooldown:reset' });
-            if (typeof OS !== 'undefined') OS.notify('⏱️','Cooldowns','All hack cooldowns reset!');
-          }
-
-          if (!item.consumable) addUnlock(item.id);
-
-          if (msgEl) { msgEl.textContent = '✅ Purchased!'; msgEl.style.color = '#4ade80'; }
-          if (typeof OS !== 'undefined') OS.notify('🛒','NormShop',`Purchased ${item.name}!`);
-          setTimeout(render, 800);
+          renderMain();
         });
       });
     };
 
-    // Listen for balance updates to refresh the balance display
-    if (typeof Network !== 'undefined') {
-      const onBal = () => {
-        const balEl = wrap.querySelector('#nshop-bal');
-        if (balEl && typeof Economy !== 'undefined') balEl.textContent = fmt(Economy.state.balance);
-      };
-      Network.on('economy:balance:update', onBal);
-      Network.on('market:trade:ok', onBal);
-      Network.on('bank:update', onBal);
-      wrap._shopCleanup = () => {
-        Network.off('economy:balance:update', onBal);
-        Network.off('market:trade:ok', onBal);
-        Network.off('bank:update', onBal);
-      };
-    }
+    renderMain();
+    const balInt = setInterval(() => { if (!document.body.contains(wrap)) { clearInterval(balInt); return; } refreshBal(); }, 2000);
 
-    render();
-
-    // Add animated backgrounds CSS if not already present
-    if (!document.getElementById('normshop-bg-styles')) {
-      const st = document.createElement('style');
-      st.id = 'normshop-bg-styles';
-      st.textContent = `
-        .desktop-bg.wp-matrix { background: #000; }
-        .desktop-bg.wp-matrix::before { content:''; position:absolute; inset:0; background: repeating-linear-gradient(0deg, rgba(0,255,0,0.03) 0px, rgba(0,255,0,0.03) 1px, transparent 1px, transparent 20px); animation: matrix-scroll 8s linear infinite; }
-        @keyframes matrix-scroll { 0%{background-position:0 0} 100%{background-position:0 400px} }
-
-        .desktop-bg.wp-synthwave { background: linear-gradient(180deg, #0d0221 0%, #1a0533 40%, #3d0066 60%, #ff6ec7 100%); }
-        .desktop-bg.wp-synthwave::before { content:''; position:absolute; inset:0; background: repeating-linear-gradient(90deg,rgba(255,110,199,0.1) 0px,transparent 1px,transparent 80px), repeating-linear-gradient(0deg,rgba(255,110,199,0.1) 0px,transparent 1px,transparent 80px); }
-
-        .desktop-bg.wp-space { background: #000; }
-        .desktop-bg.wp-space::before { content:''; position:absolute; inset:0; background: radial-gradient(ellipse at 20% 50%, rgba(120,0,255,0.15) 0%, transparent 50%), radial-gradient(ellipse at 80% 20%, rgba(0,80,255,0.1) 0%, transparent 40%); }
-        .desktop-bg.wp-space::after { content:''; position:absolute; inset:0; background-image: radial-gradient(1px 1px at 10% 20%, #fff 0%, transparent 100%), radial-gradient(1px 1px at 30% 70%, rgba(255,255,255,0.8) 0%, transparent 100%), radial-gradient(1px 1px at 60% 10%, #fff 0%, transparent 100%), radial-gradient(1px 1px at 80% 50%, rgba(255,255,255,0.6) 0%, transparent 100%), radial-gradient(1px 1px at 50% 90%, #fff 0%, transparent 100%), radial-gradient(1.5px 1.5px at 15% 40%, rgba(200,200,255,0.9) 0%, transparent 100%), radial-gradient(1px 1px at 90% 80%, #fff 0%, transparent 100%), radial-gradient(1px 1px at 70% 60%, rgba(255,255,255,0.7) 0%, transparent 100%); }
-
-        .desktop-bg.wp-rain { background: linear-gradient(180deg, #0a1628 0%, #0d1f3c 100%); }
-        .desktop-bg.wp-rain::before { content:''; position:absolute; inset:0; background: repeating-linear-gradient(105deg, transparent, transparent 2px, rgba(100,150,255,0.04) 2px, rgba(100,150,255,0.04) 3px); animation: rain-fall 0.8s linear infinite; background-size: 30px 80px; }
-        @keyframes rain-fall { 0%{background-position:0 0} 100%{background-position:-30px 80px} }
+    if (!document.getElementById('appstore-styles')) {
+      const s = document.createElement('style');
+      s.id = 'appstore-styles';
+      s.textContent = `
+        .appstore-wrap{height:100%;overflow:hidden;background:var(--bg1);display:flex;flex-direction:column;}
+        .as-layout{display:flex;height:100%;overflow:hidden;}
+        .as-sidebar{width:175px;min-width:175px;background:var(--bg2);border-right:1px solid var(--border);padding:12px 8px;display:flex;flex-direction:column;gap:6px;}
+        .as-logo{font-size:1rem;font-weight:bold;color:var(--text1);padding:4px 4px 10px;border-bottom:1px solid var(--border);}
+        .as-search{background:var(--bg1);border:1px solid var(--border);border-radius:5px;color:var(--text1);font-size:0.75rem;padding:6px 8px;}
+        .as-nav{display:flex;flex-direction:column;gap:2px;}
+        .as-nav-item{padding:7px 10px;font-size:0.75rem;color:var(--text2);cursor:pointer;border-radius:5px;}
+        .as-nav-item:hover,.as-nav-item.active{background:var(--accent);color:#fff;}
+        .as-balance-box{margin-top:auto;background:var(--bg1);border:1px solid var(--border);border-radius:6px;padding:8px;text-align:center;}
+        .as-balance-val{font-size:0.85rem;font-weight:bold;color:var(--green);font-family:monospace;}
+        .as-main{flex:1;overflow-y:auto;}
+        .as-content{padding:16px;}
+        .as-featured-banner{background:linear-gradient(135deg,var(--accent),#7c3aed);border-radius:12px;padding:20px;margin-bottom:20px;color:#fff;}
+        .as-banner-title{font-size:1.1rem;font-weight:bold;}
+        .as-banner-sub{font-size:0.75rem;opacity:0.85;margin:4px 0 12px;}
+        .as-banner-btn{background:#fff;color:var(--accent);border:none;border-radius:6px;padding:7px 18px;font-size:0.8rem;cursor:pointer;font-weight:700;}
+        .as-section-title{font-size:0.75rem;font-weight:bold;color:var(--text2);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.05em;}
+        .as-app-grid{display:flex;flex-direction:column;gap:8px;}
+        .as-app-card{display:flex;align-items:flex-start;gap:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;}
+        .as-app-card:hover{border-color:var(--accent);}
+        .as-app-icon{font-size:2.2rem;min-width:44px;text-align:center;}
+        .as-app-info{flex:1;}
+        .as-app-name{font-size:0.88rem;font-weight:bold;color:var(--text1);}
+        .as-app-publisher{font-size:0.65rem;color:var(--text3);margin-bottom:3px;}
+        .as-app-stars{font-size:0.7rem;color:#facc15;margin-bottom:4px;}
+        .as-app-desc{font-size:0.73rem;color:var(--text2);line-height:1.5;}
+        .as-app-actions{display:flex;flex-direction:column;align-items:flex-end;justify-content:center;min-width:76px;}
+        .as-open-btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:0.75rem;cursor:pointer;font-weight:600;white-space:nowrap;}
+        .as-open-btn:hover{opacity:0.85;}
+        .as-buy-btn{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:0.75rem;cursor:pointer;color:var(--text1);font-weight:600;white-space:nowrap;}
+        .as-buy-btn:hover{background:var(--accent);color:#fff;border-color:var(--accent);}
+        .as-installed-badge{font-size:0.68rem;color:var(--green);font-weight:bold;}
+        .as-empty{text-align:center;color:var(--text3);padding:40px;font-size:0.85rem;}
       `;
-      document.head.appendChild(st);
+      document.head.appendChild(s);
     }
-
     return wrap;
   }
 };
