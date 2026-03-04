@@ -1,308 +1,267 @@
 /**
- * NormOS — apps/settings.js
+ * NormOS — apps/settings.js v4.1
+ * Settings: theme, wallpaper, accent, username change, desktop icons, clock widget.
  */
+
 const SettingsApp = {
   create() {
     const wrap = document.createElement('div');
-    wrap.className = 'settings-wrap';
-    const iid = Math.random().toString(36).slice(2, 6);
-    let activeSection = 'appearance';
+    wrap.style.cssText = 'display:flex;height:100%;background:var(--bg1);color:var(--text1);font-family:var(--font-mono,monospace);overflow:hidden;';
 
-    const SECTIONS = [
-      { id:'appearance', icon:'🎨', label:'Appearance' },
-      { id:'account',    icon:'👤', label:'Account' },
-      { id:'system',     icon:'⚙️', label:'System' },
-      { id:'privacy',    icon:'🔒', label:'Privacy' },
-      { id:'about',      icon:'ℹ️',  label:'About' },
-    ];
-    const THEMES = [
-      { id:'dark',    label:'Dark',    preview:'#1a1a2e' },
-      { id:'light',   label:'Light',   preview:'#f0f0f0' },
-      { id:'dracula', label:'Dracula', preview:'#282a36' },
-      { id:'nord',    label:'Nord',    preview:'#2e3440' },
-      { id:'mocha',   label:'Mocha',   preview:'#1e1e2e' },
-      { id:'hacker',  label:'Hacker',  preview:'#0d1117' },
-      { id:'sunset',  label:'Sunset',  preview:'#2d1b33' },
-    ];
-    const WALLPAPERS = [
-      { id:'',         label:'Default', emoji:'⬛' },
-      { id:'wp-grid',  label:'Grid',    emoji:'⊞'  },
-      { id:'wp-dots',  label:'Dots',    emoji:'⠿'  },
-      { id:'wp-stars', label:'Stars',   emoji:'✨' },
-      { id:'wp-city',  label:'Neon City',emoji:'🌆'},
-      { id:'wp-void',  label:'The Void',emoji:'🌑' },
-    ];
-    const ACCENTS = [
-      { id:'',       color:'#4f9eff', label:'Blue'   },
-      { id:'green',  color:'#4ade80', label:'Green'  },
-      { id:'purple', color:'#a78bfa', label:'Purple' },
-      { id:'orange', color:'#fb923c', label:'Orange' },
-      { id:'red',    color:'#f87171', label:'Red'    },
-      { id:'yellow', color:'#facc15', label:'Yellow' },
-      { id:'pink',   color:'#f472b6', label:'Pink'   },
-      { id:'cyan',   color:'#22d3ee', label:'Cyan'   },
-    ];
-    const FONT_SIZES = [
-      { id:'',   label:'Default (13px)' },
-      { id:'sm', label:'Small (11px)'   },
-      { id:'lg', label:'Large (15px)'   },
-      { id:'xl', label:'X-Large (17px)' },
-    ];
-
-    const getSetting = (k, def) => { try { return localStorage.getItem(k) || def || ''; } catch { return def || ''; } };
-    const setSetting = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
-    const notify = (msg) => { if (typeof OS !== 'undefined') OS.notify('⚙️', 'Settings', msg, 2500); };
+    const SECTIONS = ['Profile','Appearance','Desktop','About'];
+    let activeSection = 'Profile';
 
     wrap.innerHTML = `
-      <div class="stg-layout">
-        <div class="stg-sidebar">
-          <div class="stg-title">⚙️ Settings</div>
-          ${SECTIONS.map(s => `<div class="stg-nav-item ${s.id === activeSection ? 'active' : ''}" data-sec="${s.id}"><span>${s.icon}</span> ${s.label}</div>`).join('')}
-        </div>
-        <div class="stg-main" id="stg-main-${iid}"></div>
-      </div>`;
+      <div style="width:160px;border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;">
+        <div style="padding:12px 14px;font-size:0.85rem;font-weight:bold;color:var(--accent);border-bottom:1px solid var(--border);">⚙️ Settings</div>
+        ${SECTIONS.map(s=>`<div class="set-nav" data-s="${s}" style="padding:9px 14px;cursor:pointer;font-size:0.78rem;color:var(--text2);border-bottom:1px solid var(--border);">${s}</div>`).join('')}
+      </div>
+      <div id="set-panel" style="flex:1;overflow-y:auto;padding:20px;"></div>
+    `;
 
-    const mainEl = wrap.querySelector(`#stg-main-${iid}`);
+    const navEls = wrap.querySelectorAll('.set-nav');
+    const panel  = wrap.querySelector('#set-panel');
 
-    wrap.querySelectorAll('.stg-nav-item').forEach(el => {
-      el.addEventListener('click', () => {
-        wrap.querySelectorAll('.stg-nav-item').forEach(e => e.classList.remove('active'));
-        el.classList.add('active');
-        activeSection = el.dataset.sec;
-        renderSection();
+    const setActive = (s) => {
+      activeSection = s;
+      navEls.forEach(el => {
+        el.style.background = el.dataset.s === s ? 'var(--bg2)' : '';
+        el.style.color      = el.dataset.s === s ? 'var(--text1)' : 'var(--text2)';
       });
-    });
+      renderPanel();
+    };
+    navEls.forEach(el => el.addEventListener('click', () => setActive(el.dataset.s)));
 
-    const renderSection = () => {
-      if (activeSection === 'appearance') renderAppearance();
-      else if (activeSection === 'account') renderAccount();
-      else if (activeSection === 'system') renderSystem();
-      else if (activeSection === 'privacy') renderPrivacy();
-      else if (activeSection === 'about') renderAbout();
+    const h3 = (t) => `<div style="font-size:0.85rem;font-weight:bold;color:var(--accent);margin-bottom:14px;">${t}</div>`;
+    const label = (t) => `<div style="font-size:0.72rem;color:var(--text3);margin-bottom:4px;">${t}</div>`;
+    const row = (content) => `<div style="margin-bottom:16px;">${content}</div>`;
+
+    const renderPanel = () => {
+      panel.innerHTML = '';
+      if (activeSection === 'Profile') renderProfile();
+      else if (activeSection === 'Appearance') renderAppearance();
+      else if (activeSection === 'Desktop') renderDesktop();
+      else if (activeSection === 'About') renderAbout();
+    };
+
+    const renderProfile = () => {
+      const s = typeof Network !== 'undefined' ? Network.getState() : {};
+      const username = s.username || (typeof OS !== 'undefined' ? OS.state.username : 'User');
+      panel.innerHTML = `
+        ${h3('👤 Profile')}
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:16px;">
+          <div style="font-size:0.75rem;color:var(--text3);margin-bottom:4px;">Current display name</div>
+          <div style="font-size:1rem;font-weight:bold;color:${s.myColor||'var(--accent)'};">${username}</div>
+          ${s.isAdmin ? '<div style="font-size:0.65rem;color:#f59e0b;margin-top:4px;">👑 Admin (Ko1)</div>' : ''}
+        </div>
+        ${row(`
+          ${label('Change Display Name')}
+          <input id="set-newname" type="text" placeholder="New display name" maxlength="24" value="${username}"
+            style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--text1);font-size:0.82rem;outline:none;font-family:inherit;box-sizing:border-box;" />
+          <button id="set-rename-btn" style="margin-top:7px;padding:6px 16px;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer;font-size:0.75rem;font-weight:bold;font-family:inherit;">Apply</button>
+          <div id="set-rename-msg" style="font-size:0.7rem;min-height:18px;margin-top:5px;color:var(--text3);"></div>
+        `)}
+        ${row(`
+          ${label('Status Message')}
+          <input id="set-status" type="text" placeholder="What are you up to?" maxlength="60"
+            value="${(() => { try { return localStorage.getItem('normos_status')||''; } catch { return ''; } })()}"
+            style="width:100%;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:7px 10px;color:var(--text1);font-size:0.82rem;outline:none;font-family:inherit;box-sizing:border-box;" />
+          <button id="set-status-btn" style="margin-top:7px;padding:6px 16px;background:var(--bg2);color:var(--text1);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:0.75rem;font-family:inherit;">Save Status</button>
+        `)}
+      `;
+
+      const renameBtn = panel.querySelector('#set-rename-btn');
+      const renameMsg = panel.querySelector('#set-rename-msg');
+      renameBtn.addEventListener('click', () => {
+        const newName = panel.querySelector('#set-newname').value.trim().replace(/[^a-zA-Z0-9_]/g,'');
+        if (newName.length < 2) { renameMsg.style.color='#f87171'; renameMsg.textContent='Name too short.'; return; }
+        if (!Network.isConnected()) { renameMsg.style.color='#f87171'; renameMsg.textContent='Not connected.'; return; }
+        Network.renameUser(newName);
+        renameMsg.style.color='#4ade80'; renameMsg.textContent='Renaming…';
+      });
+      Network.on('rename:ok', (d) => {
+        renameMsg.style.color='#4ade80'; renameMsg.textContent=`✅ Renamed to ${d.newName}`;
+        if (typeof OS !== 'undefined') { OS.state.username = d.newName; OS.saveState(); }
+      });
+      Network.on('rename:fail', (d) => {
+        renameMsg.style.color='#f87171'; renameMsg.textContent=`❌ ${d.reason}`;
+      });
+
+      panel.querySelector('#set-status-btn').addEventListener('click', () => {
+        const st = panel.querySelector('#set-status').value.trim();
+        try { localStorage.setItem('normos_status', st); } catch {}
+        if (typeof OS !== 'undefined') OS.notify('✅','Settings','Status updated!');
+      });
+
+      // ── Monetise section ────────────────────────────────────────────────────
+      const monetiseDiv = document.createElement('div');
+      monetiseDiv.innerHTML = `
+        <div style="margin-top:8px;">
+          <div style="font-size:0.82rem;font-weight:bold;color:#f59e0b;margin-bottom:10px;">💰 Monetise Your Content</div>
+          <div style="font-size:0.72rem;color:var(--text3);margin-bottom:12px;line-height:1.5;">
+            Lock your NormTok or NormTunes behind a paywall. Other players must pay your set price to access your content.
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <!-- NormTok paywall -->
+            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:12px;">
+              <div style="font-size:0.78rem;font-weight:bold;color:var(--text1);margin-bottom:8px;">📱 NormTok</div>
+              <div id="set-tok-status" style="font-size:0.68rem;color:var(--text3);margin-bottom:8px;">Loading...</div>
+              <input id="set-tok-price" type="number" min="0" step="1" placeholder="Price (0 = free)"
+                style="width:100%;background:var(--bg1);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text1);font-size:0.75rem;outline:none;font-family:inherit;box-sizing:border-box;margin-bottom:6px;" />
+              <button id="set-tok-btn" style="width:100%;padding:5px;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:bold;font-family:inherit;">Set Paywall</button>
+              <div id="set-tok-msg" style="font-size:0.65rem;min-height:14px;margin-top:4px;color:#4ade80;"></div>
+            </div>
+            <!-- NormTunes paywall -->
+            <div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:12px;">
+              <div style="font-size:0.78rem;font-weight:bold;color:var(--text1);margin-bottom:8px;">🎵 NormTunes</div>
+              <div id="set-tune-status" style="font-size:0.68rem;color:var(--text3);margin-bottom:8px;">Loading...</div>
+              <input id="set-tune-price" type="number" min="0" step="1" placeholder="Price (0 = free)"
+                style="width:100%;background:var(--bg1);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text1);font-size:0.75rem;outline:none;font-family:inherit;box-sizing:border-box;margin-bottom:6px;" />
+              <button id="set-tune-btn" style="width:100%;padding:5px;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:bold;font-family:inherit;">Set Paywall</button>
+              <div id="set-tune-msg" style="font-size:0.65rem;min-height:14px;margin-top:4px;color:#4ade80;"></div>
+            </div>
+          </div>
+          <div style="font-size:0.65rem;color:var(--text3);margin-top:8px;">Set price to 0 to make it free again. Players who already paid keep their access.</div>
+        </div>
+      `;
+      panel.appendChild(monetiseDiv);
+
+      // Load current paywall prices from server profiles
+      const uname = (typeof Network !== 'undefined') ? Network.getState().username : '';
+      if (typeof Network !== 'undefined') {
+        const onProfiles = (d) => {
+          const me = (d.profiles||[]).find(p=>p.username===uname);
+          const tok  = me?.paywalls?.normtok?.price;
+          const tune = me?.paywalls?.normtunes?.price;
+          const tokStatus  = panel.querySelector('#set-tok-status');
+          const tuneStatus = panel.querySelector('#set-tune-status');
+          if (tokStatus)  tokStatus.textContent  = tok  ? `🔒 Locked at $${tok}`  : '🔓 Public (free)';
+          if (tuneStatus) tuneStatus.textContent = tune ? `🔒 Locked at $${tune}` : '🔓 Public (free)';
+          if (tok  && panel.querySelector('#set-tok-price'))  panel.querySelector('#set-tok-price').value  = tok;
+          if (tune && panel.querySelector('#set-tune-price')) panel.querySelector('#set-tune-price').value = tune;
+        };
+        Network.on('media:paywall:profiles', onProfiles);
+        Network.getPaywalls();
+
+        const setPaywall = (mediaType, inputId, msgId, statusId) => {
+          const price = parseFloat(panel.querySelector(inputId)?.value) || 0;
+          Network.setPaywall(mediaType, price);
+          const msgEl = panel.querySelector(msgId);
+          const stEl  = panel.querySelector(statusId);
+          if (msgEl) { msgEl.style.color='#4ade80'; msgEl.textContent = price > 0 ? `✅ Locked at $${price}` : '✅ Set to free'; }
+          if (stEl)  stEl.textContent = price > 0 ? `🔒 Locked at $${price}` : '🔓 Public (free)';
+          if (typeof OS !== 'undefined') OS.notify('💰','Settings', price>0?`${mediaType} locked at $${price}`:`${mediaType} set to free`);
+        };
+
+        panel.querySelector('#set-tok-btn')?.addEventListener('click', () => setPaywall('normtok','#set-tok-price','#set-tok-msg','#set-tok-status'));
+        panel.querySelector('#set-tune-btn')?.addEventListener('click', () => setPaywall('normtunes','#set-tune-price','#set-tune-msg','#set-tune-status'));
+      }
     };
 
     const renderAppearance = () => {
-      const curTheme  = (() => { try { return JSON.parse(localStorage.getItem('normos_state') || '{}').theme || 'dark'; } catch { return 'dark'; } })();
-      const curWp     = getSetting('normos_wallpaper');
-      const curAccent = getSetting('normos_accent');
-      const curFs     = getSetting('normos_fontsize');
-      const curClock  = getSetting('normos_widget_clock', 'true');
+      const themes = ['dark','light','green','purple','red','blue','midnight'];
+      const accents = ['#4f9eff','#4ade80','#f59e0b','#f87171','#c084fc','#67e8f9','#fb923c'];
+      const wallpapers = [
+        {id:'wp-default',label:'Default'},
+        {id:'wp-grid',label:'Grid'},
+        {id:'wp-stars',label:'Stars'},
+        {id:'wp-gradient',label:'Gradient'},
+        {id:'wp-circuit',label:'Circuit'},
+        {id:'wp-void',label:'Void'},
+      ];
+      const curTheme = document.body.className.match(/theme-(\S+)/)?.[1] || 'dark';
+      const curWp = (() => { try { return localStorage.getItem('normos_wallpaper')||''; } catch { return ''; } })();
+      const curAccent = (() => { try { return localStorage.getItem('normos_accent')||''; } catch { return ''; } })();
+      panel.innerHTML = `
+        ${h3('🎨 Appearance')}
+        ${row(`
+          ${label('Theme')}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${themes.map(t=>`<button class="set-theme-btn" data-t="${t}" style="padding:5px 12px;border-radius:4px;border:1px solid ${curTheme===t?'var(--accent)':'var(--border)'};background:${curTheme===t?'var(--accent)':'var(--bg2)'};color:${curTheme===t?'#000':'var(--text2)'};cursor:pointer;font-size:0.72rem;font-family:inherit;">${t}</button>`).join('')}
+          </div>
+        `)}
+        ${row(`
+          ${label('Accent Color')}
+          <div style="display:flex;gap:6px;">
+            ${accents.map(a=>`<div class="set-accent-btn" data-a="${a}" style="width:24px;height:24px;border-radius:50%;background:${a};cursor:pointer;border:2px solid ${curAccent===a?'#fff':'transparent'};"></div>`).join('')}
+          </div>
+        `)}
+        ${row(`
+          ${label('Wallpaper')}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            ${wallpapers.map(w=>`<button class="set-wp-btn" data-w="${w.id}" style="padding:5px 12px;border-radius:4px;border:1px solid ${curWp===w.id?'var(--accent)':'var(--border)'};background:${curWp===w.id?'var(--accent)':'var(--bg2)'};color:${curWp===w.id?'#000':'var(--text2)'};cursor:pointer;font-size:0.72rem;font-family:inherit;">${w.label}</button>`).join('')}
+          </div>
+        `)}
+        ${row(`
+          ${label('Font Size')}
+          <div style="display:flex;gap:6px;">
+            ${['small','normal','large'].map(fs=>`<button class="set-fs-btn" data-fs="${fs}" style="padding:5px 12px;border-radius:4px;border:1px solid var(--border);background:var(--bg2);color:var(--text2);cursor:pointer;font-size:0.72rem;font-family:inherit;">${fs}</button>`).join('')}
+          </div>
+        `)}
+      `;
 
-      mainEl.innerHTML = `<div class="stg-content">
-        <div class="stg-section-title">🎨 Theme</div>
-        <div class="stg-theme-grid">${THEMES.map(t => `<div class="stg-theme-item ${t.id === curTheme ? 'active' : ''}" data-theme="${t.id}"><div class="stg-theme-preview" style="background:${t.preview};"></div><span>${t.label}</span></div>`).join('')}</div>
-        <div class="stg-section-title" style="margin-top:16px;">🖼 Wallpaper</div>
-        <div class="stg-wp-grid">${WALLPAPERS.map(w => `<div class="stg-wp-item ${w.id === curWp ? 'active' : ''}" data-wp="${w.id}"><div class="stg-wp-preview">${w.emoji}</div><span>${w.label}</span></div>`).join('')}</div>
-        <div class="stg-section-title" style="margin-top:16px;">🔵 Accent Color</div>
-        <div class="stg-accent-row">${ACCENTS.map(a => `<div class="stg-accent-dot ${a.id === curAccent ? 'active' : ''}" data-accent="${a.id}" title="${a.label}" style="background:${a.color};"></div>`).join('')}</div>
-        <div class="stg-section-title" style="margin-top:16px;">🔠 Font Size</div>
-        <select class="stg-select" id="stg-fs-${iid}">${FONT_SIZES.map(f => `<option value="${f.id}" ${f.id === curFs ? 'selected' : ''}>${f.label}</option>`).join('')}</select>
-        <div class="stg-section-title" style="margin-top:16px;">🕐 Desktop Clock</div>
-        <div class="stg-toggle-row"><span class="stg-toggle-label">Show clock on desktop</span><label class="stg-toggle"><input type="checkbox" id="stg-clock-${iid}" ${curClock !== 'false' ? 'checked' : ''}><span class="stg-toggle-slider"></span></label></div>
-      </div>`;
+      panel.querySelectorAll('.set-theme-btn').forEach(btn => btn.addEventListener('click', () => {
+        if (typeof OS !== 'undefined') OS.setTheme(btn.dataset.t);
+        renderAppearance();
+      }));
+      panel.querySelectorAll('.set-accent-btn').forEach(btn => btn.addEventListener('click', () => {
+        try { localStorage.setItem('normos_accent', btn.dataset.a); } catch {}
+        document.body.dataset.accent = btn.dataset.a;
+        renderAppearance();
+      }));
+      panel.querySelectorAll('.set-wp-btn').forEach(btn => btn.addEventListener('click', () => {
+        try { localStorage.setItem('normos_wallpaper', btn.dataset.w); } catch {}
+        const bg = document.getElementById('desktop-bg');
+        if (bg) bg.className = 'desktop-bg ' + btn.dataset.w;
+        renderAppearance();
+      }));
+      panel.querySelectorAll('.set-fs-btn').forEach(btn => btn.addEventListener('click', () => {
+        try { localStorage.setItem('normos_fontsize', btn.dataset.fs); } catch {}
+        document.body.dataset.fontsize = btn.dataset.fs;
+      }));
+    };
 
-      mainEl.querySelectorAll('.stg-theme-item').forEach(el => {
-        el.addEventListener('click', () => {
-          mainEl.querySelectorAll('.stg-theme-item').forEach(e => e.classList.remove('active'));
-          el.classList.add('active');
-          if (typeof OS !== 'undefined') OS.setTheme(el.dataset.theme);
-          notify('Theme updated');
-        });
-      });
-      mainEl.querySelectorAll('.stg-wp-item').forEach(el => {
-        el.addEventListener('click', () => {
-          mainEl.querySelectorAll('.stg-wp-item').forEach(e => e.classList.remove('active'));
-          el.classList.add('active');
-          const wp = el.dataset.wp;
-          setSetting('normos_wallpaper', wp);
-          const bg = document.getElementById('desktop-bg');
-          if (bg) bg.className = 'desktop-bg' + (wp ? ' ' + wp : '');
-          notify('Wallpaper updated');
-        });
-      });
-      mainEl.querySelectorAll('.stg-accent-dot').forEach(el => {
-        el.addEventListener('click', () => {
-          mainEl.querySelectorAll('.stg-accent-dot').forEach(e => e.classList.remove('active'));
-          el.classList.add('active');
-          const acc = el.dataset.accent;
-          setSetting('normos_accent', acc);
-          document.body.dataset.accent = acc;
-          notify('Accent color updated');
-        });
-      });
-      mainEl.querySelector(`#stg-fs-${iid}`)?.addEventListener('change', function() {
-        setSetting('normos_fontsize', this.value);
-        document.body.dataset.fontsize = this.value;
-        notify('Font size updated');
-      });
-      mainEl.querySelector(`#stg-clock-${iid}`)?.addEventListener('change', function() {
-        setSetting('normos_widget_clock', this.checked ? 'true' : 'false');
+    const renderDesktop = () => {
+      const clockOn = (() => { try { return localStorage.getItem('normos_widget_clock') !== 'false'; } catch { return true; } })();
+      panel.innerHTML = `
+        ${h3('🖥️ Desktop')}
+        ${row(`
+          ${label('Clock Widget')}
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:0.78rem;">
+            <input type="checkbox" id="set-clock-toggle" ${clockOn?'checked':''} style="cursor:pointer;" />
+            Show clock widget on desktop
+          </label>
+        `)}
+        ${row(`
+          ${label('Desktop Icons')}
+          <button id="set-reset-icons" style="padding:6px 14px;background:var(--bg2);color:var(--text2);border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:0.75rem;font-family:inherit;">Reset Icon Positions</button>
+        `)}
+        <div style="font-size:0.72rem;color:var(--text3);margin-top:8px;">Right-click any desktop icon to remove it or reset its position. Double-click to open an app.</div>
+      `;
+      panel.querySelector('#set-clock-toggle').addEventListener('change', (e) => {
+        try { localStorage.setItem('normos_widget_clock', e.target.checked ? 'true' : 'false'); } catch {}
         if (typeof OS !== 'undefined') OS.toggleClockWidget();
-        notify(this.checked ? 'Clock widget enabled' : 'Clock widget hidden');
       });
-    };
-
-    const renderAccount = () => {
-      const username = (typeof OS !== 'undefined' && OS.state) ? OS.state.username : 'Norm';
-      const profile = (() => { try { return JSON.parse(localStorage.getItem('normos_profile') || '{}'); } catch { return {}; } })();
-      const avatar = profile.avatar || '🧑';
-      const bio = profile.bio || '';
-      const status = getSetting('normos_status');
-
-      mainEl.innerHTML = `<div class="stg-content">
-        <div class="stg-section-title">👤 Username</div>
-        <div class="stg-input-row"><input class="stg-input" id="stg-uname-${iid}" value="${username}" maxlength="20"/><button class="stg-btn" id="stg-uname-save-${iid}">Save</button></div>
-        <div class="stg-section-title" style="margin-top:16px;">😊 Avatar Emoji</div>
-        <div class="stg-input-row"><input class="stg-input" id="stg-avatar-${iid}" value="${avatar}" maxlength="4" style="width:70px;font-size:1.2rem;text-align:center;"/><button class="stg-btn" id="stg-avatar-save-${iid}">Save</button></div>
-        <div class="stg-section-title" style="margin-top:16px;">✍️ Bio</div>
-        <textarea class="stg-textarea" id="stg-bio-${iid}" maxlength="160" placeholder="Tell the world who you are...">${bio}</textarea>
-        <button class="stg-btn" id="stg-bio-save-${iid}" style="margin-top:6px;">Save Bio</button>
-        <div class="stg-section-title" style="margin-top:16px;">💬 Status Message</div>
-        <div class="stg-input-row"><input class="stg-input" id="stg-status-${iid}" value="${status}" maxlength="60" placeholder="📈 Going all in on VOID"/><button class="stg-btn" id="stg-status-save-${iid}">Save</button></div>
-        <div class="stg-section-title" style="margin-top:16px;">⚠️ Danger Zone</div>
-        <button class="stg-btn danger" id="stg-reset-${iid}">Reset All Economy Data</button>
-        <div style="font-size:0.68rem;color:var(--text3);margin-top:6px;">Clears balance, portfolio, and history. Cannot be undone.</div>
-      </div>`;
-
-      mainEl.querySelector(`#stg-uname-save-${iid}`)?.addEventListener('click', () => {
-        const val = mainEl.querySelector(`#stg-uname-${iid}`).value.trim();
-        if (!val) return;
-        if (typeof OS !== 'undefined') { OS.state.username = val; OS.saveState(); }
-        if (typeof Network !== 'undefined') Network.setUsername(val);
-        notify('Username changed to ' + val);
+      panel.querySelector('#set-reset-icons').addEventListener('click', () => {
+        if (typeof OS !== 'undefined') { OS.state.iconPositions = {}; OS.saveState(); }
+        if (typeof OS !== 'undefined') OS.notify('🖥️','Desktop','Icon positions reset.');
       });
-      mainEl.querySelector(`#stg-avatar-save-${iid}`)?.addEventListener('click', () => {
-        const val = mainEl.querySelector(`#stg-avatar-${iid}`).value.trim();
-        if (!val) return;
-        try { const p = JSON.parse(localStorage.getItem('normos_profile') || '{}'); p.avatar = val; localStorage.setItem('normos_profile', JSON.stringify(p)); } catch {}
-        notify('Avatar updated!');
-      });
-      mainEl.querySelector(`#stg-bio-save-${iid}`)?.addEventListener('click', () => {
-        const val = mainEl.querySelector(`#stg-bio-${iid}`).value;
-        try { const p = JSON.parse(localStorage.getItem('normos_profile') || '{}'); p.bio = val; localStorage.setItem('normos_profile', JSON.stringify(p)); } catch {}
-        notify('Bio saved!');
-      });
-      mainEl.querySelector(`#stg-status-save-${iid}`)?.addEventListener('click', () => {
-        setSetting('normos_status', mainEl.querySelector(`#stg-status-${iid}`).value);
-        notify('Status updated!');
-      });
-      mainEl.querySelector(`#stg-reset-${iid}`)?.addEventListener('click', () => {
-        if (!confirm('Reset ALL economy data? Cannot be undone.')) return;
-        if (typeof Economy !== 'undefined') { Economy.state.balance = 10000; Economy.state.portfolio = {}; Economy.state.txHistory = []; Economy.save(); if (typeof Economy.updateWalletDisplay === 'function') Economy.updateWalletDisplay(); }
-        notify('Economy reset. Starting balance: $10,000');
-      });
-    };
-
-    const renderSystem = () => {
-      mainEl.innerHTML = `<div class="stg-content">
-        <div class="stg-section-title">🖥 System Info</div>
-        <div class="stg-info-grid">
-          <div class="stg-info-row"><span>OS Version</span><span>NormOS v3.1</span></div>
-          <div class="stg-info-row"><span>Kernel</span><span>norm_core 3.1.0</span></div>
-          <div class="stg-info-row"><span>Shell</span><span>normbash 1.0</span></div>
-          <div class="stg-info-row"><span>localStorage used</span><span>${(JSON.stringify(localStorage).length / 1024).toFixed(1)} KB</span></div>
-          <div class="stg-info-row"><span>daemon.norm</span><span style="color:var(--red)">Running (always)</span></div>
-        </div>
-        <div class="stg-section-title" style="margin-top:16px;">⚡ Quick Actions</div>
-        <div class="stg-action-row">
-          <button class="stg-btn" onclick="if(typeof OS!=='undefined')OS.apps.open('terminal')">Terminal</button>
-          <button class="stg-btn" onclick="if(typeof OS!=='undefined')OS.apps.open('sysmon')">Sys Monitor</button>
-          <button class="stg-btn" onclick="if(typeof OS!=='undefined')OS.apps.open('files')">Files</button>
-        </div>
-        <div class="stg-section-title" style="margin-top:16px;">🔄 Power</div>
-        <div class="stg-action-row">
-          <button class="stg-btn danger" onclick="if(typeof EventBus!=='undefined')EventBus.emit('os:reboot')">Reboot NormOS</button>
-          <button class="stg-btn danger" onclick="location.reload()">Hard Reload</button>
-        </div>
-      </div>`;
-    };
-
-    const renderPrivacy = () => {
-      mainEl.innerHTML = `<div class="stg-content">
-        <div class="stg-section-title">🌐 Network & Sharing</div>
-        <div class="stg-toggle-row"><span class="stg-toggle-label">Show on leaderboard</span><label class="stg-toggle"><input type="checkbox" id="stg-lb-${iid}" ${getSetting('normos_show_lb', 'true') !== 'false' ? 'checked' : ''}><span class="stg-toggle-slider"></span></label></div>
-        <div class="stg-toggle-row" style="margin-top:10px;"><span class="stg-toggle-label">Allow virus attacks</span><label class="stg-toggle"><input type="checkbox" id="stg-virus-${iid}" ${getSetting('normos_allow_virus', 'true') !== 'false' ? 'checked' : ''}><span class="stg-toggle-slider"></span></label></div>
-        <div class="stg-section-title" style="margin-top:16px;">🗑 Clear Data</div>
-        <div class="stg-action-row" style="flex-direction:column;align-items:flex-start;gap:8px;">
-          <button class="stg-btn danger" id="stg-clear-hist-${iid}">Clear App History</button>
-          <button class="stg-btn danger" id="stg-clear-bm-${iid}">Clear Browser Bookmarks</button>
-          <button class="stg-btn danger" id="stg-clear-fr-${iid}">Clear Friends List</button>
-        </div>
-      </div>`;
-      mainEl.querySelector(`#stg-lb-${iid}`)?.addEventListener('change', function() { setSetting('normos_show_lb', this.checked ? 'true' : 'false'); notify('Setting saved'); });
-      mainEl.querySelector(`#stg-virus-${iid}`)?.addEventListener('change', function() { setSetting('normos_allow_virus', this.checked ? 'true' : 'false'); notify('Setting saved'); });
-      mainEl.querySelector(`#stg-clear-hist-${iid}`)?.addEventListener('click', () => { if (!confirm('Clear history?')) return; if (typeof OS !== 'undefined') { OS.state.recentApps = []; OS.saveState(); } notify('History cleared'); });
-      mainEl.querySelector(`#stg-clear-bm-${iid}`)?.addEventListener('click', () => { if (!confirm('Clear bookmarks?')) return; setSetting('normos_bookmarks', '[]'); notify('Bookmarks cleared'); });
-      mainEl.querySelector(`#stg-clear-fr-${iid}`)?.addEventListener('click', () => { if (!confirm('Clear friends?')) return; setSetting('normos_friends', '[]'); notify('Friends cleared'); });
     };
 
     const renderAbout = () => {
-      mainEl.innerHTML = `<div class="stg-content" style="text-align:center;">
-        <div style="font-size:3rem;margin:20px 0 8px;">⬡</div>
-        <div style="font-size:1.4rem;font-weight:bold;">NormOS v3.1</div>
-        <div style="font-size:0.75rem;color:var(--text3);margin-top:4px;">norm_core kernel · 29 apps installed</div>
-        <div style="font-size:0.7rem;color:var(--text3);font-style:italic;margin-top:4px;">"Personal Computing for the Slightly Confused"</div>
-        <div style="margin-top:20px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:left;">
-          <div class="stg-section-title">💀 daemon.norm</div>
-          <div style="font-size:0.78rem;color:var(--text2);line-height:1.7;">PID: [REDACTED] · Memory: ∞ · Status: <span style="color:var(--green)">Active</span><br><span style="color:var(--text3);font-style:italic;">It says hello.</span></div>
+      panel.innerHTML = `
+        ${h3('ℹ️ About NormOS')}
+        <div style="font-size:0.78rem;color:var(--text2);line-height:1.8;">
+          <div><span style="color:var(--text3);">Version:</span> NormOS v4.1</div>
+          <div><span style="color:var(--text3);">Build:</span> ${new Date().toLocaleDateString()}</div>
+          <div><span style="color:var(--text3);">Engine:</span> Vanilla JS + WebSockets</div>
+          <div><span style="color:var(--text3);">Server:</span> wss://normos-server.onrender.com</div>
+          <div style="margin-top:12px;color:var(--text3);font-size:0.68rem;">daemon.norm is watching. This is normal.</div>
         </div>
-        <div style="margin-top:12px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:12px;text-align:left;">
-          <div class="stg-section-title">📦 Installed Apps</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;">
-            ${Object.entries((typeof OS !== 'undefined' && OS.appRegistry) ? OS.appRegistry : {}).map(([id, def]) => `<div style="font-size:0.72rem;padding:4px 6px;background:var(--bg1);border-radius:4px;cursor:pointer;" onclick="if(typeof OS!=='undefined')OS.apps.open('${id}')">${def.icon} ${def.title}</div>`).join('')}
-          </div>
-        </div>
-      </div>`;
+      `;
     };
 
-    renderSection();
-
-    if (!document.getElementById('settings-styles')) {
-      const s = document.createElement('style');
-      s.id = 'settings-styles';
-      s.textContent = `
-        .settings-wrap{height:100%;overflow:hidden;background:var(--bg1);display:flex;flex-direction:column;}
-        .stg-layout{display:flex;height:100%;overflow:hidden;}
-        .stg-sidebar{width:175px;min-width:175px;background:var(--bg2);border-right:1px solid var(--border);padding:14px 10px;display:flex;flex-direction:column;gap:4px;}
-        .stg-title{font-size:0.9rem;font-weight:bold;color:var(--text1);padding:4px 8px 12px;border-bottom:1px solid var(--border);margin-bottom:6px;}
-        .stg-nav-item{display:flex;align-items:center;gap:8px;padding:8px 10px;font-size:0.78rem;color:var(--text2);cursor:pointer;border-radius:6px;}
-        .stg-nav-item:hover,.stg-nav-item.active{background:var(--accent);color:#fff;}
-        .stg-main{flex:1;overflow-y:auto;}
-        .stg-content{padding:16px;display:flex;flex-direction:column;gap:6px;}
-        .stg-section-title{font-size:0.7rem;font-weight:bold;color:var(--text2);text-transform:uppercase;letter-spacing:0.06em;padding-bottom:6px;border-bottom:1px solid var(--border);}
-        .stg-theme-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;margin-top:6px;}
-        .stg-theme-item{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;padding:6px;border-radius:6px;border:2px solid transparent;font-size:0.7rem;color:var(--text2);}
-        .stg-theme-item:hover,.stg-theme-item.active{border-color:var(--accent);color:var(--text1);}
-        .stg-theme-preview{width:52px;height:32px;border-radius:4px;border:1px solid var(--border);}
-        .stg-wp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:8px;margin-top:6px;}
-        .stg-wp-item{display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer;padding:6px;border-radius:6px;border:2px solid transparent;font-size:0.7rem;color:var(--text2);}
-        .stg-wp-item:hover,.stg-wp-item.active{border-color:var(--accent);color:var(--text1);}
-        .stg-wp-preview{width:52px;height:32px;border-radius:4px;background:var(--bg2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:1.1rem;}
-        .stg-accent-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;}
-        .stg-accent-dot{width:28px;height:28px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:transform 0.1s;}
-        .stg-accent-dot:hover,.stg-accent-dot.active{border-color:#fff;transform:scale(1.15);}
-        .stg-select{background:var(--bg2);border:1px solid var(--border);border-radius:5px;color:var(--text1);font-size:0.8rem;padding:6px 10px;margin-top:6px;}
-        .stg-toggle-row{display:flex;justify-content:space-between;align-items:center;margin-top:6px;}
-        .stg-toggle-label{font-size:0.8rem;color:var(--text1);}
-        .stg-toggle{position:relative;display:inline-block;width:36px;height:20px;}
-        .stg-toggle input{opacity:0;width:0;height:0;}
-        .stg-toggle-slider{position:absolute;inset:0;background:var(--bg3);border-radius:20px;cursor:pointer;transition:0.2s;}
-        .stg-toggle-slider:before{content:'';position:absolute;width:14px;height:14px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:0.2s;}
-        .stg-toggle input:checked+.stg-toggle-slider{background:var(--accent);}
-        .stg-toggle input:checked+.stg-toggle-slider:before{transform:translateX(16px);}
-        .stg-input-row{display:flex;gap:8px;align-items:center;margin-top:6px;}
-        .stg-input{flex:1;background:var(--bg1);border:1px solid var(--border);border-radius:5px;color:var(--text1);font-size:0.82rem;padding:6px 10px;}
-        .stg-textarea{width:100%;height:72px;background:var(--bg1);border:1px solid var(--border);border-radius:5px;color:var(--text1);font-size:0.82rem;padding:6px 10px;resize:none;box-sizing:border-box;margin-top:6px;}
-        .stg-btn{background:var(--accent);color:#fff;border:none;border-radius:5px;padding:6px 14px;font-size:0.75rem;cursor:pointer;font-weight:600;white-space:nowrap;}
-        .stg-btn:hover{opacity:0.85;}
-        .stg-btn.danger{background:#f87171;}
-        .stg-info-grid{display:flex;flex-direction:column;gap:3px;margin-top:6px;}
-        .stg-info-row{display:flex;justify-content:space-between;padding:5px 8px;background:var(--bg2);border-radius:4px;font-size:0.75rem;color:var(--text2);}
-        .stg-info-row span:last-child{color:var(--text1);font-family:monospace;}
-        .stg-action-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
-      `;
-      document.head.appendChild(s);
-    }
+    setActive('Profile');
     return wrap;
-  }
+  },
 };
