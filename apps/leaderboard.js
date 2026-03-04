@@ -16,7 +16,7 @@ const LeaderboardApp = {
         </div>
         <div style="display:flex;gap:6px;">
           <button id="lb-tab-board" style="font-size:0.7rem;padding:3px 10px;border-radius:4px;border:1px solid var(--accent);background:var(--accent);color:#000;cursor:pointer;">🏆 Board</button>
-          <button id="lb-tab-dms"   style="font-size:0.7rem;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;">💬 DMs</button>
+          <button style="font-size:0.7rem;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:transparent;color:var(--text2);cursor:pointer;" onclick="if(typeof OS!=='undefined')OS.apps.open('social')">💬 Messages →</button>
         </div>
       </div>
 
@@ -37,24 +37,6 @@ const LeaderboardApp = {
         </table>
       </div>
 
-      <!-- DMs panel -->
-      <div id="lb-panel-dms" style="flex:1;display:none;flex-direction:column;">
-        <div style="display:flex;height:100%;">
-          <div id="lb-dm-users" style="width:160px;border-right:1px solid var(--border);overflow-y:auto;flex-shrink:0;font-size:0.72rem;">
-            <div style="padding:6px 10px;color:var(--text3);border-bottom:1px solid var(--border);font-size:0.68rem;">ONLINE</div>
-          </div>
-          <div style="flex:1;display:flex;flex-direction:column;">
-            <div id="lb-dm-header" style="padding:7px 12px;border-bottom:1px solid var(--border);font-size:0.75rem;color:var(--text2);flex-shrink:0;">Select a user →</div>
-            <div id="lb-dm-messages" style="flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:5px;"></div>
-            <div id="lb-dm-input-row" style="display:none;padding:7px;border-top:1px solid var(--border);gap:5px;flex-shrink:0;">
-              <input id="lb-dm-input" placeholder="Message..." autocomplete="off"
-                style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:4px;padding:5px 8px;color:var(--text1);font-size:0.75rem;outline:none;font-family:inherit;width:calc(100% - 60px);" />
-              <button id="lb-dm-send" style="padding:5px 12px;background:var(--accent);color:#000;border:none;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:bold;margin-left:5px;">Send</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
       <!-- Action modal -->
       <div id="lb-modal" style="display:none;position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:100;align-items:center;justify-content:center;">
         <div id="lb-modal-inner" style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:20px;min-width:280px;max-width:360px;"></div>
@@ -70,25 +52,7 @@ const LeaderboardApp = {
     const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
     // ── Tabs ──────────────────────────────────────────────────────────────────
-    const tabBoard = wrap.querySelector('#lb-tab-board');
-    const tabDms   = wrap.querySelector('#lb-tab-dms');
     const panelBoard = wrap.querySelector('#lb-panel-board');
-    const panelDms   = wrap.querySelector('#lb-panel-dms');
-
-    const switchTab = (t) => {
-      if (t === 'board') {
-        panelBoard.style.display = 'block'; panelDms.style.display = 'none';
-        tabBoard.style.background = 'var(--accent)'; tabBoard.style.color = '#000'; tabBoard.style.borderColor = 'var(--accent)';
-        tabDms.style.background = 'transparent'; tabDms.style.color = 'var(--text2)'; tabDms.style.borderColor = 'var(--border)';
-      } else {
-        panelBoard.style.display = 'none'; panelDms.style.display = 'flex';
-        tabDms.style.background = 'var(--accent)'; tabDms.style.color = '#000'; tabDms.style.borderColor = 'var(--accent)';
-        tabBoard.style.background = 'transparent'; tabBoard.style.color = 'var(--text2)'; tabBoard.style.borderColor = 'var(--border)';
-        renderDmList();
-      }
-    };
-    tabBoard.addEventListener('click', () => switchTab('board'));
-    tabDms.addEventListener('click',   () => switchTab('dms'));
 
     // ── Leaderboard render ─────────────────────────────────────────────────────
     const renderBoard = () => {
@@ -229,97 +193,32 @@ const LeaderboardApp = {
       });
     };
 
-    // ── DM panel ──────────────────────────────────────────────────────────────
-    const renderDmList = () => {
-      const list = wrap.querySelector('#lb-dm-users');
-      const header = list.querySelector('div');
-      list.innerHTML = '';
-      list.appendChild(header);
-      const others = onlineUsers.filter(u => u.id !== myId);
-      if (!others.length) {
-        const el = document.createElement('div');
-        el.style.cssText = 'padding:8px 10px;color:var(--text3);font-size:0.68rem;font-style:italic;';
-        el.textContent = 'No one else online';
-        list.appendChild(el);
-        return;
-      }
-      others.forEach(u => {
-        const el = document.createElement('div');
-        el.style.cssText = `padding:7px 10px;cursor:pointer;display:flex;align-items:center;gap:5px;border-bottom:1px solid var(--border);${activeDmId===u.id?'background:var(--bg2);':''}`;
-        el.innerHTML = `<span style="color:#4ade80;font-size:0.5rem;">●</span><span style="color:${u.color};font-size:0.7rem;">${esc(u.username)}</span>`;
-        el.addEventListener('click', () => openDm(u.id, u.username));
-        list.appendChild(el);
-      });
-    };
-
+    // ── DM: redirect to Social app ────────────────────────────────────────────
     const openDm = (id, name) => {
-      activeDmId = id;
-      switchTab('dms');
-      wrap.querySelector('#lb-dm-header').textContent = `💬 ${name}`;
-      const inputRow = wrap.querySelector('#lb-dm-input-row');
-      inputRow.style.display = 'flex';
-      wrap.querySelector('#lb-dm-messages').innerHTML = '<div style="color:var(--text3);font-size:0.7rem;font-style:italic;">Loading…</div>';
-      renderDmList();
-      Network.send({ type: 'dm:history', withId: id });
+      if (typeof OS !== 'undefined') OS.apps.open('social');
     };
-
-    const appendDm = (msg, isMe) => {
-      const box = wrap.querySelector('#lb-dm-messages');
-      const loading = box.querySelector('div[style*="italic"]');
-      if (loading) box.innerHTML = '';
-      const el = document.createElement('div');
-      el.style.cssText = `display:flex;flex-direction:column;align-items:${isMe?'flex-end':'flex-start'};margin-bottom:2px;`;
-      el.innerHTML = `
-        <div style="max-width:72%;background:${isMe?'var(--accent)':'var(--bg2)'};color:${isMe?'#000':'var(--text1)'};padding:5px 9px;border-radius:7px;font-size:0.75rem;word-break:break-word;">${esc(msg.text)}</div>
-        <div style="font-size:0.6rem;color:var(--text3);padding:0 4px;margin-top:1px;">${msg.ts||''}</div>
-      `;
-      box.appendChild(el);
-      box.scrollTop = box.scrollHeight;
-    };
-
-    const dmInput = wrap.querySelector('#lb-dm-input');
-    const dmSend  = wrap.querySelector('#lb-dm-send');
-    const sendDm  = () => {
-      if (!activeDmId) return;
-      const text = dmInput.value.trim(); if (!text) return;
-      dmInput.value = '';
-      Network.send({ type: 'dm:send', to: activeDmId, text });
-      appendDm({ text, ts: new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false}) }, true);
-    };
-    dmSend.addEventListener('click', sendDm);
-    dmInput.addEventListener('keydown', e => { if (e.key === 'Enter') sendDm(); });
 
     // ── Network events ────────────────────────────────────────────────────────
     const onWelcome = (data) => {
       myId        = Network.getState().myId;
-      onlineUsers = (data.online || []).filter(u => u.username !== 'daemon.norm');
-      if (data.leaderboard) { leaderboard = data.leaderboard.filter(u => u.username !== 'daemon.norm'); renderBoard(); }
+      onlineUsers = data.online || [];
+      if (data.leaderboard) { leaderboard = data.leaderboard; renderBoard(); }
     };
 
-    const onLeaderboard = (data) => { leaderboard = (data.leaderboard || []).filter(u => u.username !== 'daemon.norm'); renderBoard(); };
-    const onOnline      = (users) => { onlineUsers = users; renderBoard(); if (wrap.querySelector('#lb-panel-dms').style.display !== 'none') renderDmList(); };
-    const onDmReceive   = (data)  => { if (data.fromId === activeDmId) appendDm({ text: data.text, ts: data.ts }, false); };
-    const onDmHistory   = (data)  => { if (data.withId !== activeDmId) return; const box = wrap.querySelector('#lb-dm-messages'); box.innerHTML = ''; (data.messages||[]).forEach(m => appendDm(m, m.fromId === myId)); };
+    const onLeaderboard = (data) => { leaderboard = data.leaderboard || []; renderBoard(); };
+    const onOnline      = (users) => { onlineUsers = users; renderBoard(); };
     const onTransferOk  = (data)  => { if (typeof OS !== 'undefined') OS.notify('💸','NormBank',`Sent $${data.amount.toFixed(2)} to ${data.to}`); renderBoard(); };
     const onVirusSent   = (data)  => { if (typeof OS !== 'undefined') OS.notify('☣️','Virus Sent',`${data.virusType} deployed against ${data.to}!`); };
 
     Network.on('welcome',           onWelcome);
     Network.on('leaderboard:rich',  onLeaderboard);
     Network.on('online:update',     onOnline);
-    Network.on('dm:receive',        onDmReceive);
-    Network.on('dm:history',        onDmHistory);
     Network.on('money:transfer:ok', onTransferOk);
     Network.on('virus:sent',        onVirusSent);
 
     if (Network.isConnected()) {
       const s = Network.getState();
-      myId = s.myId;
-      onlineUsers = (s.online || []).filter(u => u.username !== 'daemon.norm');
-      // Seed from cached state immediately so the board isn't empty on open
-      if (s.leaderboard && s.leaderboard.length) {
-        leaderboard = s.leaderboard.filter(u => u.username !== 'daemon.norm');
-        renderBoard();
-      }
+      myId = s.myId; onlineUsers = s.online || [];
       Network.send({ type: 'leaderboard:get' });
     }
 
@@ -334,8 +233,6 @@ const LeaderboardApp = {
       Network.off('welcome', onWelcome);
       Network.off('leaderboard:rich', onLeaderboard);
       Network.off('online:update', onOnline);
-      Network.off('dm:receive', onDmReceive);
-      Network.off('dm:history', onDmHistory);
       Network.off('money:transfer:ok', onTransferOk);
       Network.off('virus:sent', onVirusSent);
       clearInterval(syncTimer);
