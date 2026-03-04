@@ -39,7 +39,7 @@ const OS = (() => {
     clock:       { title:'Clock',           icon:'🕐',  width:400,  height:420, create:()=>ClockApp.create()       },
     music:       { title:'NormTunes',       icon:'🎵',  width:340,  height:560, create:()=>MusicApp.create()       },
     calendar:    { title:'Calendar',        icon:'📅',  width:880,  height:560, create:()=>CalendarApp.create()    },
-    imagedrop:   { title:'Image Viewer',    icon:'🖼',  width:760,  height:540, create:()=>ImageDropApp.create()   },
+    imagedrop:   { title:'Image Viewer',    icon:'🖼',  width:760,  height:540, create:(o)=>ImageDropApp.create(o)   },
     texteditor:  { title:'NormEdit',        icon:'✏️',  width:800,  height:560, create:(o)=>TextEditorApp.create(o?.filePath,o?.content) },
     stocks:      { title:'NormStock',       icon:'📈',  width:940,  height:580, create:()=>StocksApp.create()      },
     leaderboard: { title:'Leaderboard',     icon:'🏆',  width:900,  height:560, create:()=>LeaderboardApp.create() },
@@ -51,9 +51,10 @@ const OS = (() => {
     miner:       { title:'NormMiner',       icon:'⛏️',  width:640,  height:520, create:()=>MinerApp.create()       },
     casino:      { title:'NormCasino',      icon:'🎰',  width:900,  height:560, create:()=>CasinoApp.create()      },
     settings:    { title:'Settings',        icon:'⚙️',  width:720,  height:520, create:()=>SettingsApp.create()    },
-    hub:         { title:'NormHub',         icon:'🏪',  width:880,  height:560, create:()=>AppStoreApp.create()    },
-    appstore:    { title:'NormHub',         icon:'🏪',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
-    shop:        { title:'NormHub',         icon:'🏪',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
+    hub:         { title:'NormShop',         icon:'🛒',  width:880,  height:560, create:()=>AppStoreApp.create()    },
+    appstore:    { title:'NormShop',         icon:'🛒',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
+    shop:        { title:'NormShop',         icon:'🛒',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
+    normshop:    { title:'NormShop',         icon:'🛒',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
   };
 
   const BOOT_MSGS = [
@@ -145,8 +146,18 @@ const OS = (() => {
         <button id="auth-tab-login"  style="flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;">Sign In</button>
         <button id="auth-tab-signup" style="flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;">Create Account</button>
       </div>
-      <input class="login-input" type="text"     id="auth-username" placeholder="Username" autocomplete="off" maxlength="24" />
-      <input class="login-input" type="password" id="auth-password" placeholder="Password" autocomplete="off" />
+      <div id="login-fields">
+        <input class="login-input" type="text"     id="auth-username" placeholder="Display Name" autocomplete="off" maxlength="24" />
+        <input class="login-input" type="password" id="auth-password" placeholder="Password" autocomplete="off" />
+      </div>
+      <div id="signup-fields" style="display:none;">
+        <div style="font-size:0.68rem;color:#f59e0b;margin-bottom:3px;">Real Name (your actual name — only visible to Ko1)</div>
+        <input class="login-input" type="text" id="auth-realname" placeholder="Real Name (e.g. John Smith)" autocomplete="off" maxlength="64" />
+        <div style="font-size:0.68rem;color:var(--text3);margin-bottom:3px;margin-top:6px;">Display Name (DO NOT use your real name)</div>
+        <input class="login-input" type="text" id="auth-displayname" placeholder="Display Name (e.g. NormUser42)" autocomplete="off" maxlength="24" />
+        <div style="font-size:0.68rem;color:var(--text3);margin-bottom:3px;margin-top:6px;">Password</div>
+        <input class="login-input" type="password" id="auth-password2" placeholder="Password (min 3 chars)" autocomplete="off" />
+      </div>
       <button class="login-btn" id="auth-submit">Sign In →</button>
       <div id="auth-status" style="font-size:0.7rem;color:var(--text3);margin-top:6px;min-height:18px;text-align:center;"></div>
       <div class="login-hint">Server: wss://normos-server.onrender.com</div>
@@ -158,16 +169,20 @@ const OS = (() => {
       const ts = card.querySelector('#auth-tab-signup');
       const ti = card.querySelector('#auth-title');
       const sb = card.querySelector('#auth-submit');
+      const lf = card.querySelector('#login-fields');
+      const sf = card.querySelector('#signup-fields');
       if (m === 'login') {
         tl.style.cssText = 'flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;';
         ts.style.cssText = 'flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;';
         ti.textContent   = 'Sign In';
         sb.textContent   = 'Sign In →';
+        lf.style.display = ''; sf.style.display = 'none';
       } else {
         ts.style.cssText = 'flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;';
         tl.style.cssText = 'flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;';
         ti.textContent   = 'Create Account';
         sb.textContent   = 'Create Account →';
+        lf.style.display = 'none'; sf.style.display = '';
       }
     };
 
@@ -177,63 +192,83 @@ const OS = (() => {
     const statusEl = card.querySelector('#auth-status');
     const setStatus = (msg, color='var(--text3)') => { statusEl.textContent=msg; statusEl.style.color=color; };
 
-    // ── Auth listeners ─────────────────────────────────────────────────────
-    const cleanup = () => {
-      Network.off('auth:ok',       onOk);
-      Network.off('auth:error',    onErr);
-      Network.off('auth:required', onReq);
-      Network.off('connected',     onConn);
-    };
-    const onOk = (data) => {
-      clearInterval(ci); cleanup();
-      state.username = data.username; saveState();
-      setStatus('✅ Signed in!', '#4ade80');
-      loginEl.style.opacity = '0'; loginEl.style.transition = 'opacity 0.4s';
+    // Listen for auth results from Network
+    const onAuthOk = (data) => {
+      clearInterval(ci);
+      cleanupListeners();
+      state.username = data.username;
+      saveState();
+      setStatus('✅ Authenticated!', '#4ade80');
+      loginEl.style.opacity = '0';
+      loginEl.style.transition = 'opacity 0.4s';
       setTimeout(() => { loginEl.style.display = 'none'; showDesktop(); }, 400);
     };
-    const onErr = (data) => {
+    const onAuthErr = (data) => {
       setStatus('❌ ' + (data.message||'Error'), 'var(--red)');
       card.querySelector('#auth-password').value = '';
       card.querySelector('#auth-password').focus();
     };
-    const onReq  = () => setStatus('🟢 Server ready — enter your credentials.', '#4ade80');
-    const onConn = () => setStatus('🟢 Server ready — enter your credentials.', '#4ade80');
-
-    Network.on('auth:ok',       onOk);
-    Network.on('auth:error',    onErr);
-    Network.on('auth:required', onReq);
-    Network.on('connected',     onConn);
+    const onAuthRequired = () => {
+      setStatus('Server connected — enter your credentials.', '#4ade80');
+    };
+    const onConnected = () => {
+      setStatus('Server connected — enter your credentials.', '#4ade80');
+    };
+    const cleanupListeners = () => {
+      Network.off('auth:ok', onAuthOk);
+      Network.off('auth:error', onAuthErr);
+      Network.off('auth:required', onAuthRequired);
+      Network.off('connected', onConnected);
+    };
+    Network.on('auth:ok', onAuthOk);
+    Network.on('auth:error', onAuthErr);
+    Network.on('auth:required', onAuthRequired);
+    Network.on('connected', onConnected);
 
     const doSubmit = () => {
-      const uname = (card.querySelector('#auth-username').value||'').trim();
-      const pw    = (card.querySelector('#auth-password').value||'').trim();
-      if (!uname) { setStatus('Enter a username.', 'var(--red)'); return; }
-      if (!pw)    { setStatus('Enter a password.', 'var(--red)'); return; }
-      if (!Network.isConnected()) {
-        // Server is waking up — queue the submit for when it connects
-        setStatus('⏳ Server waking up… will sign in automatically when ready.', '#f59e0b');
-        const onReady = () => {
-          Network.off('connected', onReady);
-          setStatus('Authenticating…', 'var(--text3)');
-          if (mode === 'login') Network.login(uname, pw);
-          else                  Network.signup(uname, pw);
-        };
-        Network.on('connected', onReady);
-        Network.connect();
-        return;
+      if (mode === 'login') {
+        const uname = (card.querySelector('#auth-username').value||'').trim();
+        const pw    = (card.querySelector('#auth-password').value||'').trim();
+        if (!uname) { setStatus('Enter a username.', 'var(--red)'); return; }
+        if (!pw)    { setStatus('Enter a password.', 'var(--red)'); return; }
+        if (!Network.isConnected()) {
+          state.username = uname; saveState();
+          clearInterval(ci); cleanupListeners();
+          loginEl.style.opacity='0'; loginEl.style.transition='opacity 0.4s';
+          setTimeout(()=>{ loginEl.style.display='none'; showDesktop(); },400);
+          return;
+        }
+        setStatus('Authenticating…', 'var(--text3)');
+        Network.login(uname, pw);
+      } else {
+        const realName  = (card.querySelector('#auth-realname').value||'').trim();
+        const dispName  = (card.querySelector('#auth-displayname').value||'').trim();
+        const pw        = (card.querySelector('#auth-password2').value||'').trim();
+        if (!realName) { setStatus('Enter your real name.', 'var(--red)'); return; }
+        if (!dispName) { setStatus('Enter a display name.', 'var(--red)'); return; }
+        if (!pw)       { setStatus('Enter a password.', 'var(--red)'); return; }
+        if (!Network.isConnected()) {
+          state.username = dispName; saveState();
+          clearInterval(ci); cleanupListeners();
+          loginEl.style.opacity='0'; loginEl.style.transition='opacity 0.4s';
+          setTimeout(()=>{ loginEl.style.display='none'; showDesktop(); },400);
+          return;
+        }
+        setStatus('Creating account…', 'var(--text3)');
+        Network.signup(dispName, pw, realName);
       }
-      setStatus('Authenticating…', 'var(--text3)');
-      if (mode === 'login') Network.login(uname, pw);
-      else                  Network.signup(uname, pw);
     };
 
     card.querySelector('#auth-submit').addEventListener('click', doSubmit);
     card.querySelector('#auth-password').addEventListener('keydown', e => { if (e.key==='Enter') doSubmit(); });
+    card.querySelector('#auth-password2').addEventListener('keydown', e => { if (e.key==='Enter') doSubmit(); });
     card.querySelector('#auth-username').addEventListener('keydown', e => { if (e.key==='Enter') card.querySelector('#auth-password').focus(); });
+    card.querySelector('#auth-displayname').addEventListener('keydown', e => { if (e.key==='Enter') card.querySelector('#auth-password2').focus(); });
+    card.querySelector('#auth-realname').addEventListener('keydown', e => { if (e.key==='Enter') card.querySelector('#auth-displayname').focus(); });
     setTimeout(() => card.querySelector('#auth-username').focus(), 100);
 
-    if (Network.isConnected()) setStatus('🟢 Server ready — enter your credentials.', '#4ade80');
-    else setStatus('⏳ Connecting to server… (Render may take ~30s to wake)', '#f59e0b');
+    if (Network.isConnected()) setStatus('Server connected — enter your credentials.', '#4ade80');
+    else setStatus('Connecting to server…', '#f59e0b');
   };
 
   const login = () => document.getElementById('auth-submit')?.click();
@@ -331,6 +366,16 @@ const OS = (() => {
       showContextMenu(e.clientX, e.clientY, [
         { icon:'🔄', label:'Refresh Desktop',   action: buildDesktopIcons },
         { icon:'⚙️', label:'Desktop Settings',  action: ()=>apps.open('settings') },
+        { icon:'➕', label:'Add App to Desktop', action: ()=>{
+          const name = prompt('Enter app ID to add to desktop (e.g. terminal, snake, bank, stocks):','');
+          if (!name) return;
+          try {
+            const h = JSON.parse(localStorage.getItem('normos_hidden_icons') || '[]');
+            const updated = h.filter(id=>id!==name.trim().toLowerCase());
+            localStorage.setItem('normos_hidden_icons', JSON.stringify(updated));
+          } catch {}
+          buildDesktopIcons();
+        }},
         { sep:true },
         { icon:'🖥️', label:'Terminal',          action: ()=>apps.open('terminal') },
         { icon:'📁', label:'File Explorer',     action: ()=>apps.open('files') },
@@ -344,7 +389,7 @@ const OS = (() => {
         { icon:'🎰', label:'NormCasino',        action: ()=>apps.open('casino') },
         { sep:true },
         { icon:'💬', label:'NormChat',          action: ()=>apps.open('chat') },
-        { icon:'🏪', label:'NormHub',           action: ()=>apps.open('hub') },
+        { icon:'🛒', label:'NormShop',           action: ()=>apps.open('hub') },
         { icon:'🎨', label:'NormPaint',         action: ()=>apps.open('paint') },
         { icon:'✏️', label:'NormEdit',          action: ()=>apps.open('texteditor') },
         { sep:true },
@@ -374,19 +419,22 @@ const OS = (() => {
   };
 
   // ── Draggable desktop icons ──────────────────────────────────────────────
+  const DEFAULT_ICON_APPS = [
+    'terminal','files','browser','texteditor',
+    'sysmon','snake','chat','paint',
+    'normsheet','calculator','clock','music','calendar',
+    'imagedrop','stocks','leaderboard',
+    'normtok','social','bank','miner',
+    'casino','settings','hub',
+  ];
+
   const buildDesktopIcons = () => {
     const container = document.getElementById('desktop-icons');
     container.innerHTML = '';
 
-    const iconApps = [
-      'terminal','files','browser','texteditor',
-      'sysmon','snake','chat','paint',
-      'normsheet','calculator','clock','music','calendar',
-      'imagedrop','stocks','leaderboard',
-      // v4.0 apps
-      'normtok','social','bank','miner',
-      'casino','settings','hub',
-    ];
+    // Use saved icon list or default
+    const hiddenIcons = (() => { try { return JSON.parse(localStorage.getItem('normos_hidden_icons') || '[]'); } catch { return []; } })();
+    const iconApps = DEFAULT_ICON_APPS.filter(id => !hiddenIcons.includes(id));
 
     const colH = 90, colW = 90, startX = 12, startY = 12;
     const maxRows = Math.floor((window.innerHeight - 44 - startY) / colH);
@@ -454,8 +502,15 @@ const OS = (() => {
         document.querySelectorAll('.desk-icon').forEach(i => i.classList.remove('selected'));
         el.classList.add('selected');
         showContextMenu(e.clientX, e.clientY, [
-          { icon: app.icon, label: `Open ${app.title}`,  action: ()=>apps.open(id) },
-          { icon: '📌',     label: 'Reset Position',      action: ()=>{ delete state.iconPositions[id]; saveState(); buildDesktopIcons(); } },
+          { icon: app.icon, label: `Open ${app.title}`,   action: ()=>apps.open(id) },
+          { icon: '📌',     label: 'Reset Position',       action: ()=>{ delete state.iconPositions[id]; saveState(); buildDesktopIcons(); } },
+          { icon: '🗑️',     label: 'Remove from Desktop',  action: ()=>{
+            try {
+              const h = JSON.parse(localStorage.getItem('normos_hidden_icons') || '[]');
+              if (!h.includes(id)) { h.push(id); localStorage.setItem('normos_hidden_icons', JSON.stringify(h)); }
+            } catch {}
+            buildDesktopIcons();
+          }},
         ]);
       });
 
