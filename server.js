@@ -7,69 +7,10 @@
 const { WebSocketServer, WebSocket } = require('ws');
 const http   = require('http');
 const crypto = require('crypto');
-const { Pool } = require('pg');
 
 const PORT = process.env.PORT || 3001;
 
-// ── Postgres storage ───────────────────────────────────────────────────────
-const db = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
-});
-
-const initDB = async () => {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS accounts (
-      username_key TEXT PRIMARY KEY,
-      data         JSONB NOT NULL
-    )
-  `);
-  console.log('  ✅ Postgres table ready.');
-};
-
-const loadAccounts = async () => {
-  try {
-    const res = await db.query('SELECT username_key, data FROM accounts');
-    for (const row of res.rows) {
-      accounts.set(row.username_key, row.data);
-    }
-    console.log(`  ✅ Loaded ${accounts.size} accounts from Postgres.`);
-  } catch (e) { console.error('Failed to load accounts:', e.message); }
-};
-
-const saveAccount = async (key, acc) => {
-  try {
-    const data = {
-      id: acc.id, username: acc.username, passHash: acc.passHash,
-      color: acc.color, balance: acc.balance, deposit: acc.deposit || 0,
-      creditScore: acc.creditScore || 0, loans: acc.loans || null,
-      hackCooldowns: acc.hackCooldowns || {},
-    };
-    await db.query(
-      `INSERT INTO accounts (username_key, data) VALUES ($1, $2)
-       ON CONFLICT (username_key) DO UPDATE SET data = $2`,
-      [key, JSON.stringify(data)]
-    );
-  } catch (e) { console.error('Failed to save account:', e.message); }
-};
-
-// Debounced per-account save
-const _saveTimers = {};
-const scheduleSave = (key) => {
-  if (!key) {
-    // Save all accounts (legacy call with no key — save everyone)
-    for (const [k, acc] of accounts) scheduleSave(k);
-    return;
-  }
-  if (_saveTimers[key]) return;
-  _saveTimers[key] = setTimeout(() => {
-    delete _saveTimers[key];
-    const acc = accounts.get(key);
-    if (acc) saveAccount(key, acc);
-  }, 1500);
-};
-
-// In-memory store — loaded from Postgres on startup
+// Fresh in-memory store — all accounts wiped on server restart per v4.0 spec
 const accounts = new Map(); // username.toLowerCase() → account object
 const clients  = new Map(); // ws → clientObj
 const channels = new Map();
@@ -89,6 +30,7 @@ const STOCKS = [
   { id:'VOID',    name:'The Void Corp',      sector:'Energy',   basePrice:0.01,   vol:0.9,   icon:'🌑' },
   { id:'SHOP',    name:'NormShop Global',    sector:'Consumer', basePrice:178.00, vol:0.022, icon:'🛒' },
   { id:'CAFE',    name:'daemon.café',        sector:'Consumer', basePrice:22.50,  vol:0.04,  icon:'☕' },
+  { id:'ITACO',   name:"Isaac's Tacos",      sector:'Consumer', basePrice:42.00,  vol:0.35,  icon:'🌮' },
   { id:'NRMC',    name:'NormCoin',           sector:'Crypto',   basePrice:0.42,   vol:0.15,  icon:'🟡' },
   { id:'DMNCOIN', name:'DaemonCoin',         sector:'Crypto',   basePrice:1337.0, vol:0.12,  icon:'😈' },
   { id:'VOID_C',  name:'VoidToken',          sector:'Crypto',   basePrice:0.0001, vol:0.5,   icon:'🔮' },
@@ -109,15 +51,47 @@ STOCKS.forEach(s => {
 setInterval(() => {
   STOCKS.forEach(s => {
     const cur    = stockPrices[s.id];
-    const revert = (s.basePrice - cur) * 0.002;
-    const shock  = cur * s.vol * (Math.random() - 0.5) * 0.3;
-    const event  = Math.random() < 0.01 ? cur * (Math.random() * 0.12 - 0.06) : 0;
-    const press  = (tradeVolume[s.id]||0) * cur * 0.002;
-    let next     = Math.max(0.0001, cur + revert + shock + event + press);
-    if (s.sector === 'Crypto' && Math.random() < 0.005)
-      next = cur * (Math.random() < 0.5 ? 1.3 : 0.7);
+    const buyPressure  = (tradeVolume[s.id+'_buy'] ||0) * cur * 0.006;
+    const sellPressure = (tradeVolume[s.id+'_sell']||0) * cur * 0.006;
+    let next;
+
+    if (s.id === 'ITACO') {
+      // Isaac's Tacos: full chaos — can swing up to 1000% up or down each tick
+      const roll = Math.random();
+      if (roll < 0.04) {
+        // Massive moon (up to +1000%)
+        const multiplier = 1 + (Math.random() * 10); // 1x–11x
+        next = cur * multiplier;
+        const ann = {id:++msgCounter,username:'🌮 Taco Bell',color:'#f59e0b',
+          text:`🚀 ITACO MOONING +${((multiplier-1)*100).toFixed(0)}%!! Isaac found a new recipe!`,ts:ts()};
+        channels.get('#general').push(ann);
+        broadcast({type:'chat:message',channel:'#general',message:ann});
+      } else if (roll < 0.08) {
+        // Catastrophic crash (down to -99%)
+        const losePct = 0.01 + Math.random() * 0.99; // lose 1%–99% of value
+        next = Math.max(0.01, cur * (1 - losePct));
+        const ann = {id:++msgCounter,username:'🌮 Health Inspector',color:'#f87171',
+          text:`💀 ITACO CRASHED -${(losePct*100).toFixed(0)}%!! Taco Tuesday cancelled.`,ts:ts()};
+        channels.get('#general').push(ann);
+        broadcast({type:'chat:message',channel:'#general',message:ann});
+      } else {
+        // Normal tick with high volatility
+        const shock  = cur * 0.6 * (Math.random() - 0.5);
+        const revert = (s.basePrice - cur) * 0.002;
+        next = Math.max(0.01, cur + revert + shock + buyPressure - sellPressure);
+      }
+    } else {
+      const revert = (s.basePrice - cur) * 0.001;
+      const shock  = cur * s.vol * (Math.random() - 0.5) * 0.2;
+      const event  = Math.random() < 0.01 ? cur * (Math.random() * 0.12 - 0.06) : 0;
+      next = Math.max(0.0001, cur + revert + shock + event + buyPressure - sellPressure);
+      if (s.sector === 'Crypto' && Math.random() < 0.005)
+        next = cur * (Math.random() < 0.5 ? 1.3 : 0.7);
+    }
+
     stockPrices[s.id] = parseFloat(next.toFixed(s.id === 'VOID_C' ? 6 : 2));
-    tradeVolume[s.id] = 0;
+    tradeVolume[s.id+'_buy']  = 0;
+    tradeVolume[s.id+'_sell'] = 0;
     const h = priceHistory[s.id]; h.push(stockPrices[s.id]);
     if (h.length > 60) h.shift();
   });
@@ -133,7 +107,6 @@ setInterval(() => {
     if ((acc.deposit||0) > 0) {
       const interest = acc.deposit * 0.005;
       acc.deposit += interest;
-      scheduleSave(acc.username.toLowerCase());
       const ws = getWsByUsername(acc.username);
       if (ws) sendTo(ws,{type:'bank:interest',amount:interest,newDeposit:acc.deposit});
     }
@@ -183,13 +156,38 @@ const getWsByUsername = (uname) => {
   return null;
 };
 
-const leaderboardData = () =>
-  [...accounts.values()].map(a=>({
+const leaderboardData = () => {
+  // Real players
+  const players = [...accounts.values()].map(a=>({
     id:a.id, username:a.username, color:a.color,
     balance:a.balance, deposit:a.deposit||0,
     netWorth:a.balance+(a.deposit||0),
     creditScore:a.creditScore||0,
+    isBank:false,
   })).sort((a,b)=>b.netWorth-a.netWorth).slice(0,50).map((u,i)=>({...u,rank:i+1}));
+
+  // NormBank — appears as a player holding everyone's deposits
+  const totalDeposits = [...accounts.values()].reduce((s,a)=>s+(a.deposit||0),0);
+  const bankEntry = {
+    id:'normbank', username:'NormBank', color:'#4ade80',
+    balance:totalDeposits, deposit:0,
+    netWorth:totalDeposits, creditScore:9999,
+    isBank:true, rank:0,
+  };
+
+  // Insert bank into sorted list
+  const all = [...players, bankEntry].sort((a,b)=>b.netWorth-a.netWorth).map((u,i)=>({...u,rank:i+1}));
+  return all;
+};
+
+const broadcastPaywallProfiles = () => {
+  const profiles = [...accounts.values()]
+    .filter(a=>a.paywalls && Object.keys(a.paywalls).length>0)
+    .map(a=>({ username:a.username, paywalls: Object.fromEntries(
+      Object.entries(a.paywalls).map(([k,v])=>[k,{price:v.price}])
+    )}));
+  broadcast({type:'media:paywall:profiles', profiles});
+};
 
 const broadcastLeaderboard = () =>
   broadcast({type:'leaderboard:rich',leaderboard:leaderboardData()});
@@ -218,16 +216,17 @@ wss.on('connection', (ws) => {
 
     // ── Auth ───────────────────────────────────────────────────────────
     if (msg.type==='auth:signup') {
-      const uname=(msg.username||'').trim().slice(0,24).replace(/[^a-zA-Z0-9_]/g,'');
+      const displayName=(msg.displayName||msg.username||'').trim().slice(0,24).replace(/[^a-zA-Z0-9_]/g,'');
+      const realName=(msg.realName||'').trim().slice(0,64);
+      const uname=displayName;
       const pw=(msg.password||'').trim();
-      if (uname.length<2) { sendTo(ws,{type:'auth:error',message:'Username too short (min 2).'}); return; }
+      if (uname.length<2) { sendTo(ws,{type:'auth:error',message:'Display name too short (min 2).'}); return; }
       if (pw.length<3)    { sendTo(ws,{type:'auth:error',message:'Password too short (min 3).'}); return; }
       if (accounts.has(uname.toLowerCase())) { sendTo(ws,{type:'auth:error',message:'Username taken.'}); return; }
-      const acc={id:uid(),username:uname,passHash:phash(pw),
+      const acc={id:uid(),username:uname,displayName:uname,realName:realName||'',passHash:phash(pw),
         color:COLORS[accounts.size%COLORS.length],balance:10000,
         deposit:0,creditScore:0,loans:null,hackCooldowns:{}};
       accounts.set(uname.toLowerCase(),acc);
-      scheduleSave(uname.toLowerCase());
       completeLogin(ws,client,acc);
       return;
     }
@@ -265,7 +264,6 @@ wss.on('connection', (ws) => {
         const tacc=accounts.get((msg.to||'').toLowerCase());
         if (!tacc) { sendTo(ws,{type:'money:transfer:fail',reason:'User not found.'}); break; }
         acc.balance-=amt; tacc.balance+=amt;
-        scheduleSave(client.username.toLowerCase());
         const tws=getWsByUsername(tacc.username);
         if (tws) sendTo(tws,{type:'money:received',from:acc.username,fromId:client.id,amount:amt,ts:ts()});
         sendTo(ws,{type:'money:transfer:ok',to:tacc.username,amount:amt,newBalance:acc.balance,ts:ts()});
@@ -286,7 +284,6 @@ wss.on('connection', (ws) => {
         const amt=parseFloat(msg.amount)||0;
         if (amt<=0||amt>acc.balance) { sendTo(ws,{type:'bank:error',message:'Invalid amount.'}); break; }
         acc.balance-=amt; acc.deposit=(acc.deposit||0)+amt;
-        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:update',balance:acc.balance,deposit:acc.deposit,
           creditScore:acc.creditScore||0,loan:acc.loans||null,
           creditTier:getCreditTier(acc.creditScore||0)});
@@ -297,7 +294,6 @@ wss.on('connection', (ws) => {
         const amt=parseFloat(msg.amount)||0;
         if (amt<=0||amt>(acc.deposit||0)) { sendTo(ws,{type:'bank:error',message:'Invalid amount.'}); break; }
         acc.deposit-=amt; acc.balance+=amt;
-        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:update',balance:acc.balance,deposit:acc.deposit,
           creditScore:acc.creditScore||0,loan:acc.loans||null,
           creditTier:getCreditTier(acc.creditScore||0)});
@@ -309,15 +305,15 @@ wss.on('connection', (ws) => {
         const score=acc.creditScore||0;
         const tier=getCreditTier(score);
         const amt=parseFloat(msg.amount)||0;
-        if (amt<=0||amt>tier.loanCap) {
-          sendTo(ws,{type:'bank:error',message:`Credit tier "${tier.name}" cap: $${tier.loanCap.toLocaleString()}.`}); break;
+        // Each tier has exactly one loan amount (min = max = loanCap)
+        if (amt !== tier.loanCap) {
+          sendTo(ws,{type:'bank:error',message:`Your tier "${tier.name}" loans are exactly $${tier.loanCap.toLocaleString()}. No more, no less.`}); break;
         }
-        const rate=amt<=500?0.05:amt<=2500?0.10:amt<=10000?0.20:0.30;
-        const termMs=amt<=500?300000:amt<=2500?900000:amt<=10000?1800000:3600000;
+        const rate=tier.loanCap<=500?0.05:tier.loanCap<=2500?0.10:tier.loanCap<=10000?0.20:0.30;
+        const termMs=tier.loanCap<=500?300000:tier.loanCap<=2500?900000:tier.loanCap<=10000?1800000:3600000;
         acc.loans={active:true,principal:amt,rate,termMs,
           borrowedAt:Date.now(),dueAt:Date.now()+termMs,totalDue:amt+amt*rate};
         acc.balance+=amt;
-        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:loan:approved',loan:acc.loans,newBalance:acc.balance}); break;
       }
 
@@ -329,7 +325,6 @@ wss.on('connection', (ws) => {
         const onTime=Date.now()<=acc.loans.dueAt;
         acc.creditScore=Math.max(0,(acc.creditScore||0)+(onTime?50:-100));
         acc.loans=null;
-        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:loan:repaid',onTime,creditScore:acc.creditScore,newBalance:acc.balance});
         broadcastLeaderboard(); break;
       }
@@ -339,7 +334,6 @@ wss.on('connection', (ws) => {
         acc.balance=0; acc.deposit=0;
         acc.creditScore=Math.max(0,(acc.creditScore||0)-200);
         acc.loans=null;
-        scheduleSave(client.username.toLowerCase());
         sendTo(ws,{type:'bank:loan:defaulted',creditScore:acc.creditScore,newBalance:0});
         broadcastLeaderboard(); break;
       }
@@ -352,8 +346,7 @@ wss.on('connection', (ws) => {
         const cost=price*msg.shares;
         if (cost>acc.balance) { sendTo(ws,{type:'market:trade:fail',reason:`Need $${fmt(cost)}.`}); break; }
         acc.balance-=cost;
-        scheduleSave(client.username.toLowerCase());
-        tradeVolume[msg.stockId]=(tradeVolume[msg.stockId]||0)+msg.shares;
+        tradeVolume[msg.stockId+'_buy']=(tradeVolume[msg.stockId+'_buy']||0)+msg.shares;
         sendTo(ws,{type:'market:trade:ok',action:'BUY',stockId:msg.stockId,shares:msg.shares,price,cost,newBalance:acc.balance});
         broadcast({type:'market:activity',action:'BUY',username:acc.username,color:acc.color,
           stockId:msg.stockId,shares:msg.shares,price},ws);
@@ -364,8 +357,7 @@ wss.on('connection', (ws) => {
         const price=stockPrices[msg.stockId];
         const rev=price*msg.shares;
         acc.balance+=rev;
-        scheduleSave(client.username.toLowerCase());
-        tradeVolume[msg.stockId]=(tradeVolume[msg.stockId]||0)-msg.shares*0.5;
+        tradeVolume[msg.stockId+'_sell']=(tradeVolume[msg.stockId+'_sell']||0)+msg.shares;
         sendTo(ws,{type:'market:trade:ok',action:'SELL',stockId:msg.stockId,shares:msg.shares,price,revenue:rev,newBalance:acc.balance});
         broadcast({type:'market:activity',action:'SELL',username:acc.username,color:acc.color,
           stockId:msg.stockId,shares:msg.shares,price},ws);
@@ -374,9 +366,7 @@ wss.on('connection', (ws) => {
 
       // ── Virus / Hacking ─────────────────────────────────────────────
       case 'virus:send': {
-        const COSTS={generic:50,ransomware:500,miner:200,glitch:100};
         const vt=msg.virusType||'generic';
-        const cost=COSTS[vt]||50;
         if (!acc.hackCooldowns) acc.hackCooldowns={};
         const ck=`${vt}:${msg.to}`;
         const last=acc.hackCooldowns[ck]||0;
@@ -384,14 +374,56 @@ wss.on('connection', (ws) => {
           const rem=Math.ceil((60000-(Date.now()-last))/1000);
           sendTo(ws,{type:'virus:fail',reason:`Cooldown: ${rem}s remaining.`}); break;
         }
-        if (acc.balance<cost) { sendTo(ws,{type:'virus:fail',reason:`Need $${cost}.`}); break; }
+        acc.hackCooldowns[ck]=Date.now();
+
+        // ── Hacking NormBank ─────────────────────────────────────────
+        if (msg.to === 'normbank') {
+          const roll = Math.random();
+          if (roll >= 0.02) {
+            // 98% fail
+            sendTo(ws,{type:'virus:fail',reason:'🏦 NormBank firewall deflected your attack! (2% chance to succeed)'}); 
+            const failAnn={id:++msgCounter,username:'daemon.norm',color:'#f87171',
+              text:`🛡️ ${acc.username} tried to hack NormBank and FAILED. The bank firewall is no joke.`,ts:ts()};
+            channels.get('#daemon-watch').push(failAnn);
+            broadcast({type:'chat:message',channel:'#daemon-watch',message:failAnn});
+            break;
+          }
+          // 2% SUCCESS — steal a % based on virus type, split among depositors
+          const stealPct = vt==='ransomware'?0.20:vt==='miner'?0.10:vt==='glitch'?0.05:0.03;
+          const totalDeposits = [...accounts.values()].reduce((s,a)=>s+(a.deposit||0),0);
+          const stolen = totalDeposits * stealPct;
+          if (stolen < 1) { sendTo(ws,{type:'virus:fail',reason:'Bank vault is empty!'}); break; }
+
+          // Deduct proportionally from all depositors and give attacker the loot
+          const depositors = [...accounts.values()].filter(a=>(a.deposit||0)>0);
+          let actualStolen = 0;
+          for (const dep of depositors) {
+            const share = (dep.deposit / totalDeposits) * stolen;
+            const take  = Math.min(share, dep.deposit);
+            dep.deposit -= take;
+            actualStolen += take;
+            const dws = getWsByUsername(dep.username);
+            if (dws) sendTo(dws,{type:'bank:hacked',
+              amount:take, by:acc.username, virusType:vt,
+              newDeposit:dep.deposit,
+              message:`🏦💀 NormBank was hacked by ${acc.username}! You lost $${take.toFixed(2)} from your deposit.`});
+          }
+          acc.balance += actualStolen;
+          sendTo(ws,{type:'virus:bank:success',stolen:actualStolen,
+            message:`🏦💰 YOU HACKED NORMBANK! Stole $${actualStolen.toFixed(2)} (${(stealPct*100).toFixed(0)}% of vault)`});
+          const ann={id:++msgCounter,username:'🚨 SYSTEM ALERT',color:'#f87171',
+            text:`🏦💀 NORMBANK WAS HACKED by ${acc.username}! $${actualStolen.toFixed(2)} stolen from depositor vaults!`,ts:ts()};
+          channels.get('#general').push(ann); channels.get('#daemon-watch').push(ann);
+          broadcast({type:'chat:message',channel:'#general',message:ann});
+          broadcast({type:'chat:message',channel:'#daemon-watch',message:ann});
+          broadcastLeaderboard(); break;
+        }
+
+        // ── Normal player hack ───────────────────────────────────────
         const tws=getWsById(msg.to);
         if (!tws) { sendTo(ws,{type:'virus:fail',reason:'Target offline.'}); break; }
-        acc.balance-=cost;
-        scheduleSave(client.username.toLowerCase());
-        acc.hackCooldowns[ck]=Date.now();
         sendTo(tws,{type:'virus:incoming',from:acc.username,fromId:client.id,virusType:vt,ts:ts()});
-        sendTo(ws,{type:'virus:sent',to:clients.get(tws)?.username,virusType:vt,cost,ts:ts()});
+        sendTo(ws,{type:'virus:sent',to:clients.get(tws)?.username,virusType:vt,cost:0,ts:ts()});
         const ve={id:++msgCounter,username:'daemon.norm',color:'#f87171',
           text:`☣️ ${acc.username} deployed ${vt} vs ${clients.get(tws)?.username}.`,ts:ts()};
         channels.get('#daemon-watch').push(ve);
@@ -402,11 +434,9 @@ wss.on('connection', (ws) => {
       case 'virus:damage': {
         const stolen=Math.min(Math.max(0,parseFloat(msg.stolen)||0),acc.balance);
         acc.balance=Math.max(0,acc.balance-stolen);
-        scheduleSave(client.username.toLowerCase());
         const aacc=accounts.get((msg.fromUsername||'').toLowerCase());
         if (aacc) {
           aacc.balance+=stolen;
-          scheduleSave(client.username.toLowerCase());
           const aws=getWsByUsername(aacc.username);
           if (aws) sendTo(aws,{type:'virus:loot',amount:stolen,from:acc.username});
         }
@@ -455,6 +485,136 @@ wss.on('connection', (ws) => {
       case 'leaderboard:get':
         sendTo(ws,{type:'leaderboard:rich',leaderboard:leaderboardData()}); break;
 
+      case 'account:rename': {
+        const newName=(msg.newName||'').trim().slice(0,24).replace(/[^a-zA-Z0-9_]/g,'');
+        if (newName.length<2) { sendTo(ws,{type:'rename:fail',reason:'Name too short.'}); break; }
+        if (newName.toLowerCase()===acc.username.toLowerCase()) { sendTo(ws,{type:'rename:fail',reason:'Same name.'}); break; }
+        if (accounts.has(newName.toLowerCase())) { sendTo(ws,{type:'rename:fail',reason:'Name taken.'}); break; }
+        const oldKey=acc.username.toLowerCase();
+        accounts.delete(oldKey);
+        const oldName=acc.username;
+        acc.username=newName; acc.displayName=newName;
+        accounts.set(newName.toLowerCase(),acc);
+        client.username=newName;
+        sendTo(ws,{type:'rename:ok',newName});
+        broadcast({type:'user:rename',id:client.id,oldName,newName:newName});
+        broadcastLeaderboard(); break;
+      }
+
+      // ── Admin (Ko1 only) ────────────────────────────────────────────────
+      case 'admin:kick': {
+        if (acc.username.toLowerCase()!=='ko1') { sendTo(ws,{type:'admin:fail',reason:'Not admin.'}); break; }
+        const tws2=getWsByUsername(msg.target||'');
+        if (!tws2) { sendTo(ws,{type:'admin:fail',reason:'User not found.'}); break; }
+        const tacc2=accounts.get((msg.target||'').toLowerCase());
+        sendTo(tws2,{type:'auth:kicked',message:msg.reason||'Kicked by admin.'});
+        if (tacc2) {
+          const ann2={id:++msgCounter,username:'NormOS',color:'#f87171',text:`🔨 ${msg.target} was kicked by Ko1.`,ts:ts()};
+          channels.get('#general').push(ann2);
+          broadcast({type:'chat:message',channel:'#general',message:ann2});
+        }
+        clients.delete(tws2); try{tws2.close();}catch{}
+        broadcastLeaderboard();
+        sendTo(ws,{type:'admin:ok',action:'kick',target:msg.target}); break;
+      }
+
+      case 'admin:setbalance': {
+        if (acc.username.toLowerCase()!=='ko1') { sendTo(ws,{type:'admin:fail',reason:'Not admin.'}); break; }
+        const tacc3=accounts.get((msg.target||'').toLowerCase());
+        if (!tacc3) { sendTo(ws,{type:'admin:fail',reason:'User not found.'}); break; }
+        const newBal=parseFloat(msg.balance);
+        if (isNaN(newBal)||newBal<0) { sendTo(ws,{type:'admin:fail',reason:'Invalid balance.'}); break; }
+        tacc3.balance=newBal;
+        const tws3=getWsByUsername(tacc3.username);
+        if (tws3) {
+          sendTo(tws3,{type:'economy:balance:update',balance:newBal});
+          sendTo(tws3,{type:'bank:update',balance:newBal,deposit:tacc3.deposit||0,creditScore:tacc3.creditScore||0,loan:tacc3.loans||null,creditTier:getCreditTier(tacc3.creditScore||0)});
+        }
+        broadcastLeaderboard();
+        sendTo(ws,{type:'admin:ok',action:'setbalance',target:msg.target,balance:newBal}); break;
+      }
+
+      case 'admin:realnames': {
+        if (acc.username.toLowerCase()!=='ko1') { sendTo(ws,{type:'admin:fail',reason:'Not admin.'}); break; }
+        const names=[...accounts.values()].map(a=>({username:a.username,realName:a.realName||''}));
+        sendTo(ws,{type:'admin:realnames',names}); break;
+      }
+
+      case 'shop:purchase': {
+        // Client already deducted balance locally; server just validates and logs
+        const cost=parseFloat(msg.price)||0;
+        if (cost>0) {
+          if (acc.balance<cost) { sendTo(ws,{type:'shop:fail',reason:'Insufficient funds.'}); break; }
+          acc.balance-=cost;
+          sendTo(ws,{type:'economy:balance:update',balance:acc.balance});
+          broadcastLeaderboard();
+        }
+        break;
+      }
+
+      case 'hack:cooldown:reset': {
+        if (acc.hackCooldowns) acc.hackCooldowns={};
+        sendTo(ws,{type:'hack:cooldown:reset:ok'}); break;
+      }
+
+      case 'normtok:post': {
+        // Broadcast post to all other clients
+        if (!msg.post) break;
+        broadcast({type:'normtok:post',post:msg.post},ws);
+        break;
+      }
+
+      case 'normtunes:upload': {
+        // Broadcast uploaded track to all other clients
+        if (!msg.track) break;
+        broadcast({type:'normtunes:track',track:msg.track},ws);
+        break;
+      }
+
+      // ── Media Paywall ────────────────────────────────────────────────
+      case 'media:paywall:set': {
+        // Player sets a price gate on their NormTok or NormTunes
+        const price = parseFloat(msg.price)||0;
+        const mediaType = msg.mediaType; // 'normtok' | 'normtunes'
+        if (!acc.paywalls) acc.paywalls = {};
+        if (price <= 0) {
+          delete acc.paywalls[mediaType];
+        } else {
+          acc.paywalls[mediaType] = { price, unlockedBy: acc.paywalls[mediaType]?.unlockedBy || [] };
+        }
+        sendTo(ws,{type:'media:paywall:set:ok', mediaType, price});
+        // Broadcast updated paywall profiles to all so leaderboard/hacker list updates
+        broadcastPaywallProfiles();
+        break;
+      }
+
+      case 'media:paywall:unlock': {
+        // Someone pays to unlock another player's NormTok/NormTunes
+        const owner = accounts.get((msg.owner||'').toLowerCase());
+        const mediaType = msg.mediaType;
+        if (!owner || !owner.paywalls?.[mediaType]) { sendTo(ws,{type:'media:paywall:unlock:fail',reason:'No paywall found.'}); break; }
+        const price = owner.paywalls[mediaType].price;
+        if (acc.balance < price) { sendTo(ws,{type:'media:paywall:unlock:fail',reason:`Need $${price.toFixed(2)}.`}); break; }
+        acc.balance -= price;
+        owner.balance += price;
+        if (!owner.paywalls[mediaType].unlockedBy) owner.paywalls[mediaType].unlockedBy=[];
+        if (!owner.paywalls[mediaType].unlockedBy.includes(acc.username)) {
+          owner.paywalls[mediaType].unlockedBy.push(acc.username);
+        }
+        sendTo(ws,{type:'media:paywall:unlock:ok', owner:owner.username, mediaType, price, newBalance:acc.balance});
+        const ows=getWsByUsername(owner.username);
+        if (ows) sendTo(ows,{type:'economy:balance:update',balance:owner.balance});
+        if (ows) sendTo(ows,{type:'chat:dm',from:'NormOS',text:`💰 ${acc.username} just paid $${price.toFixed(2)} to unlock your ${mediaType}!`});
+        broadcastLeaderboard();
+        break;
+      }
+
+      case 'media:paywall:get': {
+        // Get all active paywalls so client can show lock icons on leaderboard
+        broadcastPaywallProfiles();
+        break;
+      }
+
       case 'clipboard:share':
         broadcast({type:'clipboard:incoming',from:acc.username,color:acc.color,
           text:(msg.text||'').slice(0,2000),ts:ts()},ws); break;
@@ -467,6 +627,7 @@ wss.on('connection', (ws) => {
     const c=clients.get(ws);
     if (c?.authenticated) {
       console.log(`[-] ${c.username} disconnected`);
+      // Save balance state on disconnect (no-op for in-memory, but broadcast final leaderboard)
       broadcast({type:'user:leave',id:c.id,username:c.username});
       broadcastLeaderboard();
     }
@@ -478,6 +639,7 @@ wss.on('connection', (ws) => {
 function completeLogin(ws, client, acc) {
   client.id=acc.id; client.username=acc.username;
   client.color=acc.color; client.authenticated=true;
+  const isAdmin=acc.username.toLowerCase()==='ko1';
   console.log(`[+] ${acc.username} logged in (${clients.size} online)`);
   sendTo(ws,{
     type:'auth:ok', id:acc.id, username:acc.username, color:acc.color,
@@ -488,14 +650,19 @@ function completeLogin(ws, client, acc) {
     leaderboard:leaderboardData(),
     market:{prices:{...stockPrices},
       history:Object.fromEntries(Object.entries(priceHistory).map(([k,v])=>[k,v.slice(-30)]))},
+    isAdmin,
   });
   const gen=channels.get('#general')||[];
   if (gen.length) sendTo(ws,{type:'chat:history',channel:'#general',messages:gen.slice(-30)});
   broadcast({type:'user:join',user:{id:acc.id,username:acc.username,color:acc.color}},ws);
   broadcastLeaderboard();
+  broadcastPaywallProfiles();
 }
 
-// daemon.norm
+// Frequent leaderboard broadcast (every 10s)
+setInterval(() => {
+  if (clients.size > 0) broadcastLeaderboard();
+}, 10000);
 setInterval(() => {
   if (!clients.size) return;
   const text=DAEMON_MSGS[Math.floor(Math.random()*DAEMON_MSGS.length)];
@@ -504,17 +671,7 @@ setInterval(() => {
   broadcast({type:'chat:message',channel:'#general',message:e});
 }, 60000+Math.random()*120000);
 
-// ── Startup ───────────────────────────────────────────────────────────────
-(async () => {
-  if (!process.env.DATABASE_URL) {
-    console.warn('  ⚠  DATABASE_URL not set — accounts will not persist across restarts!');
-  } else {
-    await initDB();
-    await loadAccounts();
-  }
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n  NormOS Server v4.0 — ws://localhost:${PORT}`);
-    console.log(`  👥 Accounts loaded: ${accounts.size}`);
-    console.log(`  💾 Storage: ${process.env.DATABASE_URL ? 'Postgres ✅' : 'in-memory only ⚠'}`);
-  });
-})();
+server.listen(PORT, () => {
+  console.log(`\n  NormOS Server v4.0 — ws://localhost:${PORT}`);
+  console.log(`  ⚠ All accounts wiped (fresh start per v4.0).\n`);
+});
