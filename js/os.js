@@ -28,71 +28,76 @@ const OS = (() => {
     terminal:    { title:'Terminal',        icon:'🖥️',  width:720,  height:460, create:()=>TerminalApp.create()    },
     files:       { title:'File Explorer',   icon:'📁',  width:760,  height:500, create:()=>FileExplorerApp.create()},
     browser:     { title:'NormBrowser',     icon:'🌐',  width:900,  height:580, create:()=>BrowserApp.create()     },
+    mail:        { title:'NormMail',        icon:'📧',  width:800,  height:520, create:()=>MailApp.create()        },
+    news:        { title:'NormNews',        icon:'📰',  width:600,  height:540, create:()=>NewsApp.create()        },
+    notepad:     { title:'Notepad',         icon:'📝',  width:620,  height:480, create:(o)=>NotepadApp.create(o?.filePath,o?.content) },
     sysmon:      { title:'System Monitor',  icon:'📊',  width:640,  height:500, create:()=>SysmonApp.create()      },
     settings:    { title:'Settings',        icon:'⚙️',  width:680,  height:500, create:()=>SettingsApp.create()    },
     snake:       { title:'Snake',           icon:'🐍',  width:380,  height:420, minWidth:380, minHeight:420, resizable:false, create:()=>SnakeApp.create() },
     chat:        { title:'NormChat',        icon:'💬',  width:800,  height:520, create:()=>ChatApp.create()        },
-    messaging:   { title:'Messaging',       icon:'💬',  width:800,  height:520, create:()=>ChatApp.create()        },
     paint:       { title:'NormPaint',       icon:'🎨',  width:900,  height:580, create:()=>PaintApp.create()       },
     normsheet:   { title:'NormSheet',       icon:'📊',  width:860,  height:540, create:()=>NormSheetApp.create()   },
     calculator:  { title:'Calculator',      icon:'🔢',  width:320,  height:460, minWidth:320, minHeight:460, resizable:false, create:()=>CalculatorApp.create() },
     clock:       { title:'Clock',           icon:'🕐',  width:400,  height:420, create:()=>ClockApp.create()       },
     music:       { title:'NormTunes',       icon:'🎵',  width:340,  height:560, create:()=>MusicApp.create()       },
     calendar:    { title:'Calendar',        icon:'📅',  width:880,  height:560, create:()=>CalendarApp.create()    },
-    imagedrop:   { title:'Image Viewer',    icon:'🖼',  width:760,  height:540, create:(o)=>ImageDropApp.create(o)   },
+    imagedrop:   { title:'Image Viewer',    icon:'🖼',  width:760,  height:540, create:()=>ImageDropApp.create()   },
     texteditor:  { title:'NormEdit',        icon:'✏️',  width:800,  height:560, create:(o)=>TextEditorApp.create(o?.filePath,o?.content) },
     stocks:      { title:'NormStock',       icon:'📈',  width:940,  height:580, create:()=>StocksApp.create()      },
     leaderboard: { title:'Leaderboard',     icon:'🏆',  width:900,  height:560, create:()=>LeaderboardApp.create() },
-    // ── v4.0 apps ─────────────────────────────────────────────────────────
+    shop:        { title:'NormShop',        icon:'🛒',  width:860,  height:540, create:()=>ShopApp.create()        },
+    // ── New apps (v3.1) ───────────────────────────────────────────────────
     normtok:     { title:'NormTok',         icon:'📱',  width:860,  height:560, create:()=>NormTokApp.create()     },
-    social:      { title:'Social',          icon:'👥',  width:720,  height:560, create:()=>SocialApp.create()      },
-    bank:        { title:'NormBank',        icon:'🏦',  width:680,  height:580, create:()=>LoansApp.create()       },
-    loans:       { title:'NormBank',        icon:'🏦',  width:680,  height:580, create:()=>LoansApp.create(),       hidden:true },
+    profile:     { title:'My Profile',      icon:'👤',  width:700,  height:520, create:()=>ProfileApp.create()     },
+    friends:     { title:'Friends',         icon:'👥',  width:420,  height:500, create:()=>FriendsApp.create()     },
+    loans:       { title:'NormBank Loans',  icon:'🏦',  width:640,  height:540, create:()=>LoansApp.create()       },
     miner:       { title:'NormMiner',       icon:'⛏️',  width:640,  height:520, create:()=>MinerApp.create()       },
     casino:      { title:'NormCasino',      icon:'🎰',  width:900,  height:560, create:()=>CasinoApp.create()      },
+    mail:        { title:'NormMail',        icon:'📧',  width:840,  height:560, create:()=>MailApp.create()        },
     settings:    { title:'Settings',        icon:'⚙️',  width:720,  height:520, create:()=>SettingsApp.create()    },
-    hub:         { title:'NormShop',         icon:'🛒',  width:880,  height:560, create:()=>AppStoreApp.create()    },
-    appstore:    { title:'NormShop',         icon:'🛒',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
-    shop:        { title:'NormShop',         icon:'🛒',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
-    normshop:    { title:'NormShop',         icon:'🛒',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
+    hub:         { title:'NormHub',         icon:'🏪',  width:880,  height:560, create:()=>AppStoreApp.create()    },
+    appstore:    { title:'NormHub',         icon:'🏪',  width:880,  height:560, create:()=>AppStoreApp.create()    },
+    social:      { title:'Social',          icon:'👥',  width:760,  height:520, create:()=>SocialApp.create()      },
+    bank:        { title:'NormBank Central',icon:'🏦',  width:680,  height:540, create:()=>LoansApp.create()       },
   };
 
+  // ── Boot Messages ────────────────────────────────────────────────────────
   const BOOT_MSGS = [
-    { cls:'ok',   text:'Loading norm_core kernel v4.0...' },
+    { cls:'ok',   text:'Loading norm_core kernel v3.1...' },
     { cls:'ok',   text:'Initializing memory subsystem' },
     { cls:'ok',   text:'Mounting virtual filesystem' },
     { cls:'warn', text:'daemon.norm: process refuses to specify purpose' },
-    { cls:'ok',   text:'Starting window compositor v4' },
-    { cls:'ok',   text:'Loading account system...' },
-    { cls:'info', text:'Performing one-time database migration...' },
-    { cls:'warn', text:'All previous accounts wiped. Fresh start.' },
+    { cls:'ok',   text:'Starting window compositor v3' },
+    { cls:'ok',   text:'Loading user session' },
+    { cls:'info', text:'Checking hardware...' },
+    { cls:'warn', text:'Hardware: still conceptual. Proceeding anyway.' },
     { cls:'ok',   text:'Initializing NormNet multiplayer layer...' },
-    { cls:'ok',   text:'Loading app registry (30 applications)' },
-    { cls:'ok',   text:'NormBank Central: credit score engine started' },
-    { cls:'ok',   text:'NormBank: deposit interest accrual ready (0.5%/min)' },
-    { cls:'ok',   text:'NormBank: loan tier system initialized' },
-    { cls:'ok',   text:'NormStock: shared global market live (15 assets)' },
+    { cls:'ok',   text:'Loading app registry (29 applications)' },
+    { cls:'ok',   text:'Initializing economy engine...' },
+    { cls:'ok',   text:'NormBank: balance loaded' },
+    { cls:'ok',   text:'NormBank Loans: interest accrual engine started' },
+    { cls:'ok',   text:'NormStock: shared market engine started (15 assets)' },
     { cls:'warn', text:'VoidToken: price unstable. This is expected.' },
     { cls:'ok',   text:'NormChat: ready' },
-    { cls:'ok',   text:'Messaging: DM file attachments enabled' },
-    { cls:'ok',   text:'NormPaint: canvas initialized, file save ready' },
+    { cls:'ok',   text:'NormPaint: canvas initialized' },
     { cls:'ok',   text:'NormEdit: markdown rendering ready' },
-    { cls:'ok',   text:'NormHub: merged Shop + Hub (30 apps listed)' },
-    { cls:'ok',   text:'Leaderboard: tracking all accounts' },
-    { cls:'ok',   text:'Hacking system: minigame engine loaded' },
-    { cls:'ok',   text:'Hacking: 60s cooldown system active' },
+    { cls:'ok',   text:'NormShop: 18 items available' },
+    { cls:'ok',   text:'Leaderboard: tracking all users' },
+    { cls:'ok',   text:'Virus arsenal: loaded' },
     { cls:'ok',   text:'NormTok: social feed initialized' },
-    { cls:'ok',   text:'NormMiner: payout feedback enabled' },
-    { cls:'ok',   text:'Social: Profile + Friends + Messaging merged' },
+    { cls:'ok',   text:'NormMiner: passive income engine ready' },
+    { cls:'ok',   text:'Friends: loading contact list' },
+    { cls:'ok',   text:'Profile: loading user data' },
     { cls:'ok',   text:'NormCasino: RNG seeded (house advantage: confirmed)' },
+    { cls:'ok',   text:'NormMail: IMAP daemon started' },
     { cls:'ok',   text:'Settings: user preferences loaded' },
-    { cls:'warn', text:'daemon.norm: "I see the new accounts."' },
+    { cls:'ok',   text:'NormHub App Store: 19 apps listed' },
+    { cls:'warn', text:'daemon.norm: "I see the new users."' },
     { cls:'ok',   text:'Restoring desktop layout...' },
     { cls:'warn', text:'Clock accuracy: still not guaranteed' },
-    { cls:'fail', text:'Notepad: removed' },
-    { cls:'fail', text:'NormMail: removed (use Messaging in Social app)' },
-    { cls:'warn', text:'Purpose: increasingly unclear. Financially dangerous, though.' },
-    { cls:'ok',   text:'NormOS v4.0 ready.' },
+    { cls:'fail', text:'Attempting to determine OS purpose...' },
+    { cls:'warn', text:'Purpose: increasingly unclear. Economically dangerous, though.' },
+    { cls:'ok',   text:'NormOS v3.1 ready.' },
   ];
 
   // ── Boot ─────────────────────────────────────────────────────────────────
@@ -118,160 +123,43 @@ const OS = (() => {
     setTimeout(step, 400);
   };
 
-  // ── Login / Signup ───────────────────────────────────────────────────────
+  // ── Login ────────────────────────────────────────────────────────────────
   const showLogin = () => {
     document.getElementById('boot-screen').style.display = 'none';
     const loginEl = document.getElementById('login-screen');
     loginEl.style.display = 'flex';
-
-    // Replace login card with full auth UI
-    const card = loginEl.querySelector('.login-card');
-    if (!card) return;
+    document.getElementById('login-display-name').textContent = state.username;
 
     const clockEl = document.getElementById('login-clock');
     const dateEl  = document.getElementById('login-date');
     const tick = () => {
       const now = new Date();
-      if (clockEl) clockEl.textContent = now.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
-      if (dateEl)  dateEl.textContent  = now.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+      clockEl.textContent = now.toLocaleTimeString('en-US', { hour:'2-digit', minute:'2-digit', hour12:false });
+      dateEl.textContent  = now.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
     };
     tick();
     const ci = setInterval(tick, 1000);
 
-    let mode = 'login'; // or 'signup'
-    card.innerHTML = `
-      <div class="login-avatar">🏦</div>
-      <div class="login-username" id="auth-title">Welcome to NormOS</div>
-      <div style="display:flex;gap:8px;margin-bottom:12px;">
-        <button id="auth-tab-login"  style="flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;">Sign In</button>
-        <button id="auth-tab-signup" style="flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;">Create Account</button>
-      </div>
-      <div id="login-fields">
-        <input class="login-input" type="text"     id="auth-username" placeholder="Display Name" autocomplete="off" maxlength="24" />
-        <input class="login-input" type="password" id="auth-password" placeholder="Password" autocomplete="off" />
-      </div>
-      <div id="signup-fields" style="display:none;">
-        <div style="font-size:0.68rem;color:#f59e0b;margin-bottom:3px;">Real Name (your actual name — only visible to Ko1)</div>
-        <input class="login-input" type="text" id="auth-realname" placeholder="Real Name (e.g. John Smith)" autocomplete="off" maxlength="64" />
-        <div style="font-size:0.68rem;color:var(--text3);margin-bottom:3px;margin-top:6px;">Display Name (DO NOT use your real name)</div>
-        <input class="login-input" type="text" id="auth-displayname" placeholder="Display Name (e.g. NormUser42)" autocomplete="off" maxlength="24" />
-        <div style="font-size:0.68rem;color:var(--text3);margin-bottom:3px;margin-top:6px;">Password</div>
-        <input class="login-input" type="password" id="auth-password2" placeholder="Password (min 3 chars)" autocomplete="off" />
-      </div>
-      <button class="login-btn" id="auth-submit">Sign In →</button>
-      <div id="auth-status" style="font-size:0.7rem;color:var(--text3);margin-top:6px;min-height:18px;text-align:center;"></div>
-      <div class="login-hint">Server: wss://normos-server.onrender.com</div>
-    `;
-
-    const setMode = (m) => {
-      mode = m;
-      const tl = card.querySelector('#auth-tab-login');
-      const ts = card.querySelector('#auth-tab-signup');
-      const ti = card.querySelector('#auth-title');
-      const sb = card.querySelector('#auth-submit');
-      const lf = card.querySelector('#login-fields');
-      const sf = card.querySelector('#signup-fields');
-      if (m === 'login') {
-        tl.style.cssText = 'flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;';
-        ts.style.cssText = 'flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;';
-        ti.textContent   = 'Sign In';
-        sb.textContent   = 'Sign In →';
-        lf.style.display = ''; sf.style.display = 'none';
+    const doLogin = () => {
+      const pw = document.getElementById('login-pw').value;
+      if (pw === '' || pw === 'norm' || pw === state.username.toLowerCase()) {
+        clearInterval(ci);
+        loginEl.style.opacity = '0';
+        loginEl.style.transition = 'opacity 0.4s';
+        setTimeout(() => { loginEl.style.display = 'none'; showDesktop(); }, 400);
       } else {
-        ts.style.cssText = 'flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;';
-        tl.style.cssText = 'flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;';
-        ti.textContent   = 'Create Account';
-        sb.textContent   = 'Create Account →';
-        lf.style.display = 'none'; sf.style.display = '';
+        const inp = document.getElementById('login-pw');
+        inp.style.borderColor = 'var(--red)'; inp.value = '';
+        inp.placeholder = 'Wrong. Try "norm".';
+        setTimeout(() => { inp.style.borderColor = ''; inp.placeholder = 'Password'; }, 2000);
       }
     };
-
-    card.querySelector('#auth-tab-login').addEventListener('click', () => setMode('login'));
-    card.querySelector('#auth-tab-signup').addEventListener('click', () => setMode('signup'));
-
-    const statusEl = card.querySelector('#auth-status');
-    const setStatus = (msg, color='var(--text3)') => { statusEl.textContent=msg; statusEl.style.color=color; };
-
-    // Listen for auth results from Network
-    const onAuthOk = (data) => {
-      clearInterval(ci);
-      cleanupListeners();
-      state.username = data.username;
-      saveState();
-      setStatus('✅ Authenticated!', '#4ade80');
-      loginEl.style.opacity = '0';
-      loginEl.style.transition = 'opacity 0.4s';
-      setTimeout(() => { loginEl.style.display = 'none'; showDesktop(); }, 400);
-    };
-    const onAuthErr = (data) => {
-      setStatus('❌ ' + (data.message||'Error'), 'var(--red)');
-      card.querySelector('#auth-password').value = '';
-      card.querySelector('#auth-password').focus();
-    };
-    const onAuthRequired = () => {
-      setStatus('Server connected — enter your credentials.', '#4ade80');
-    };
-    const onConnected = () => {
-      setStatus('Server connected — enter your credentials.', '#4ade80');
-    };
-    const cleanupListeners = () => {
-      Network.off('auth:ok', onAuthOk);
-      Network.off('auth:error', onAuthErr);
-      Network.off('auth:required', onAuthRequired);
-      Network.off('connected', onConnected);
-    };
-    Network.on('auth:ok', onAuthOk);
-    Network.on('auth:error', onAuthErr);
-    Network.on('auth:required', onAuthRequired);
-    Network.on('connected', onConnected);
-
-    const doSubmit = () => {
-      if (mode === 'login') {
-        const uname = (card.querySelector('#auth-username').value||'').trim();
-        const pw    = (card.querySelector('#auth-password').value||'').trim();
-        if (!uname) { setStatus('Enter a username.', 'var(--red)'); return; }
-        if (!pw)    { setStatus('Enter a password.', 'var(--red)'); return; }
-        if (!Network.isConnected()) {
-          state.username = uname; saveState();
-          clearInterval(ci); cleanupListeners();
-          loginEl.style.opacity='0'; loginEl.style.transition='opacity 0.4s';
-          setTimeout(()=>{ loginEl.style.display='none'; showDesktop(); },400);
-          return;
-        }
-        setStatus('Authenticating…', 'var(--text3)');
-        Network.login(uname, pw);
-      } else {
-        const realName  = (card.querySelector('#auth-realname').value||'').trim();
-        const dispName  = (card.querySelector('#auth-displayname').value||'').trim();
-        const pw        = (card.querySelector('#auth-password2').value||'').trim();
-        if (!realName) { setStatus('Enter your real name.', 'var(--red)'); return; }
-        if (!dispName) { setStatus('Enter a display name.', 'var(--red)'); return; }
-        if (!pw)       { setStatus('Enter a password.', 'var(--red)'); return; }
-        if (!Network.isConnected()) {
-          state.username = dispName; saveState();
-          clearInterval(ci); cleanupListeners();
-          loginEl.style.opacity='0'; loginEl.style.transition='opacity 0.4s';
-          setTimeout(()=>{ loginEl.style.display='none'; showDesktop(); },400);
-          return;
-        }
-        setStatus('Creating account…', 'var(--text3)');
-        Network.signup(dispName, pw, realName);
-      }
-    };
-
-    card.querySelector('#auth-submit').addEventListener('click', doSubmit);
-    card.querySelector('#auth-password').addEventListener('keydown', e => { if (e.key==='Enter') doSubmit(); });
-    card.querySelector('#auth-password2').addEventListener('keydown', e => { if (e.key==='Enter') doSubmit(); });
-    card.querySelector('#auth-username').addEventListener('keydown', e => { if (e.key==='Enter') card.querySelector('#auth-password').focus(); });
-    card.querySelector('#auth-displayname').addEventListener('keydown', e => { if (e.key==='Enter') card.querySelector('#auth-password2').focus(); });
-    card.querySelector('#auth-realname').addEventListener('keydown', e => { if (e.key==='Enter') card.querySelector('#auth-displayname').focus(); });
-    setTimeout(() => card.querySelector('#auth-username').focus(), 100);
-
-    if (Network.isConnected()) setStatus('Server connected — enter your credentials.', '#4ade80');
-    else setStatus('Connecting to server…', '#f59e0b');
+    document.getElementById('login-btn').addEventListener('click', doLogin);
+    document.getElementById('login-pw').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+    setTimeout(() => document.getElementById('login-pw').focus(), 100);
   };
 
-  const login = () => document.getElementById('auth-submit')?.click();
+  const login = () => document.getElementById('login-btn').click();
 
   // ── Restore customizations ───────────────────────────────────────────────
   const restoreCustomizations = () => {
@@ -366,34 +254,27 @@ const OS = (() => {
       showContextMenu(e.clientX, e.clientY, [
         { icon:'🔄', label:'Refresh Desktop',   action: buildDesktopIcons },
         { icon:'⚙️', label:'Desktop Settings',  action: ()=>apps.open('settings') },
-        { icon:'➕', label:'Add App to Desktop', action: ()=>{
-          const name = prompt('Enter app ID to add to desktop (e.g. terminal, snake, bank, stocks):','');
-          if (!name) return;
-          try {
-            const h = JSON.parse(localStorage.getItem('normos_hidden_icons') || '[]');
-            const updated = h.filter(id=>id!==name.trim().toLowerCase());
-            localStorage.setItem('normos_hidden_icons', JSON.stringify(updated));
-          } catch {}
-          buildDesktopIcons();
-        }},
         { sep:true },
         { icon:'🖥️', label:'Terminal',          action: ()=>apps.open('terminal') },
         { icon:'📁', label:'File Explorer',     action: ()=>apps.open('files') },
         { icon:'📈', label:'NormStock',         action: ()=>apps.open('stocks') },
         { icon:'🏆', label:'Leaderboard',       action: ()=>apps.open('leaderboard') },
-        { icon:'🏦', label:'NormBank',           action: ()=>apps.open('bank') },
+        { icon:'🏦', label:'NormBank Central',  action: ()=>apps.open('bank') },
+        { icon:'📈', label:'NormStock',          action: ()=>apps.open('stocks') },
+        { icon:'⛏️', label:'NormMiner',          action: ()=>apps.open('miner') },
         { sep:true },
-        { icon:'📱', label:'NormTok',           action: ()=>apps.open('normtok') },
-        { icon:'👥', label:'Social',            action: ()=>apps.open('social') },
-        { icon:'⛏️', label:'NormMiner',         action: ()=>apps.open('miner') },
-        { icon:'🎰', label:'NormCasino',        action: ()=>apps.open('casino') },
+        { icon:'👥', label:'Social',             action: ()=>apps.open('social') },
+        { icon:'📱', label:'NormTok',            action: ()=>apps.open('normtok') },
+        { icon:'💬', label:'NormChat',           action: ()=>apps.open('chat') },
         { sep:true },
-        { icon:'💬', label:'NormChat',          action: ()=>apps.open('chat') },
-        { icon:'🛒', label:'NormShop',           action: ()=>apps.open('hub') },
-        { icon:'🎨', label:'NormPaint',         action: ()=>apps.open('paint') },
-        { icon:'✏️', label:'NormEdit',          action: ()=>apps.open('texteditor') },
+        { icon:'🎰', label:'NormCasino',         action: ()=>apps.open('casino') },
+        { icon:'🐍', label:'Snake',              action: ()=>apps.open('snake') },
         { sep:true },
-        { icon:'⚙️', label:'Settings',          action: ()=>apps.open('settings') },
+        { icon:'🎨', label:'NormPaint',          action: ()=>apps.open('paint') },
+        { icon:'✏️', label:'NormEdit',           action: ()=>apps.open('texteditor') },
+        { icon:'🏪', label:'NormHub',            action: ()=>apps.open('hub') },
+        { sep:true },
+        { icon:'⚙️', label:'Settings',           action: ()=>apps.open('settings') },
       ]);
     });
 
@@ -408,10 +289,10 @@ const OS = (() => {
     EventBus.on('os:reboot',  runReboot);
     EventBus.on('os:logout',  showLogin);
 
-    setTimeout(() => notify('👋', 'Welcome to NormOS v4.0', `Logged in as ${state.username}. Balance: $${Economy.fmt(Economy.state.balance)}`), 1500);
-    setTimeout(() => notify('🏦', 'NormBank Central', 'New: Credit scores, deposits, interest. Open NormBank to get started.'), 4000);
-    setTimeout(() => notify('☣️', 'Hacking System', 'Hacks now require a minigame. Block attacks by typing the sequence.'), 7000);
-    setTimeout(() => notify('📈', 'NormStock', 'Shared global market — your trades affect everyone\'s prices.'), 10000);
+    setTimeout(() => notify('👋', 'Welcome back', `Good to see you, ${state.username}. Balance: $${Economy.fmt(Economy.state.balance)}`), 1500);
+    setTimeout(() => notify('📈', 'NormStock', 'Shared market open. Your trades move real prices.'), 4000);
+    setTimeout(() => notify('🎰', 'NormCasino', 'New: Casino, Mail, Settings, NormHub App Store!'), 7000);
+    setTimeout(() => notify('☣️', 'NormNet', 'Virus attacks enabled. Watch your balance.'), 10000);
 
     EventBus.emit('os:ready');
     state.firstBoot = false;
@@ -419,22 +300,18 @@ const OS = (() => {
   };
 
   // ── Draggable desktop icons ──────────────────────────────────────────────
-  const DEFAULT_ICON_APPS = [
-    'terminal','files','browser','texteditor',
-    'sysmon','snake','chat','paint',
-    'normsheet','calculator','clock','music','calendar',
-    'imagedrop','stocks','leaderboard',
-    'normtok','social','bank','miner',
-    'casino','settings','hub',
-  ];
-
   const buildDesktopIcons = () => {
     const container = document.getElementById('desktop-icons');
     container.innerHTML = '';
 
-    // Use saved icon list or default
-    const hiddenIcons = (() => { try { return JSON.parse(localStorage.getItem('normos_hidden_icons') || '[]'); } catch { return []; } })();
-    const iconApps = DEFAULT_ICON_APPS.filter(id => !hiddenIcons.includes(id));
+    const iconApps = [
+      'terminal','files','browser','texteditor',
+      'sysmon','snake','chat','paint',
+      'normsheet','calculator','clock','music','calendar',
+      'imagedrop','stocks','leaderboard',
+      'normtok','social','bank','miner',
+      'casino','settings','hub',
+    ];
 
     const colH = 90, colW = 90, startX = 12, startY = 12;
     const maxRows = Math.floor((window.innerHeight - 44 - startY) / colH);
@@ -502,15 +379,8 @@ const OS = (() => {
         document.querySelectorAll('.desk-icon').forEach(i => i.classList.remove('selected'));
         el.classList.add('selected');
         showContextMenu(e.clientX, e.clientY, [
-          { icon: app.icon, label: `Open ${app.title}`,   action: ()=>apps.open(id) },
-          { icon: '📌',     label: 'Reset Position',       action: ()=>{ delete state.iconPositions[id]; saveState(); buildDesktopIcons(); } },
-          { icon: '🗑️',     label: 'Remove from Desktop',  action: ()=>{
-            try {
-              const h = JSON.parse(localStorage.getItem('normos_hidden_icons') || '[]');
-              if (!h.includes(id)) { h.push(id); localStorage.setItem('normos_hidden_icons', JSON.stringify(h)); }
-            } catch {}
-            buildDesktopIcons();
-          }},
+          { icon: app.icon, label: `Open ${app.title}`,  action: ()=>apps.open(id) },
+          { icon: '📌',     label: 'Reset Position',      action: ()=>{ delete state.iconPositions[id]; saveState(); buildDesktopIcons(); } },
         ]);
       });
 
@@ -587,7 +457,6 @@ const OS = (() => {
     const list = document.getElementById('sm-apps-list');
     list.innerHTML = '';
     Object.entries(appRegistry).forEach(([id, def]) => {
-      if (def.hidden) return;
       const el = document.createElement('div');
       el.className = 'sm-app-item';
       el.innerHTML = `<span class="sma-icon">${def.icon}</span>${def.title}`;
