@@ -32,6 +32,7 @@ const Economy = (() => {
     // Consumer
     { id: 'SHOP', name: 'NormShop Global',    sector: 'Consumer',basePrice: 178.00, vol: 0.022, icon: '🛒' },
     { id: 'CAFE', name: 'daemon.café',        sector: 'Consumer',basePrice: 22.50,  vol: 0.04,  icon: '☕' },
+    { id: 'ITACO',name: "Isaac's Tacos",      sector: 'Consumer',basePrice: 42.00,  vol: 0.35,  icon: '🌮' },
     // Crypto
     { id: 'NRMC', name: 'NormCoin',           sector: 'Crypto',  basePrice: 0.42,   vol: 0.15,  icon: '🟡' },
     { id: 'DMNCOIN', name: 'DaemonCoin',      sector: 'Crypto',  basePrice: 1337.00,vol: 0.12,  icon: '😈' },
