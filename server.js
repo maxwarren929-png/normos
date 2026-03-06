@@ -1,7 +1,7 @@
 /**
- * NormOS — server.js v4.0
- * Features: account auth, central bank, DMs w/ files, shared stock market,
- *           money transfers, virus attacks, hacking cooldowns, daemon.norm
+ * NormOS — server.js v5.0
+ * Fixes: loan system (fixed $500 tiers), hack cost deduction, save-on-disconnect,
+ *        admin powers (Ko1), leaderboard (no DMs), real name support, anti-exploit
  */
 
 const { WebSocketServer, WebSocket } = require('ws');
@@ -11,23 +11,28 @@ const fs     = require('fs');
 const path   = require('path');
 
 const PORT = process.env.PORT || 3001;
-// Use DATA_DIR env var if set (e.g. a Render persistent disk mount like /data)
-// Otherwise falls back to same directory as server.js
-// NOTE: Render FREE tier has ephemeral disk — set up a Persistent Disk in Render dashboard
-//       and set DATA_DIR=/data to actually keep accounts across restarts.
 const DB_FILE = path.join(process.env.DATA_DIR || __dirname, 'normos_accounts.json');
 
-// ── Persistent storage ─────────────────────────────────────────────────────
+// ── ADMIN CONFIG ────────────────────────────────────────────────────────────
+const ADMIN_USERNAME = 'ko1'; // case-insensitive — Ko1, KO1, ko1 all work
+
+// ── Persistent storage ──────────────────────────────────────────────────────
 const saveAccounts = () => {
   try {
     const data = {};
     for (const [key, acc] of accounts) {
-      // Don't save transient fields
       data[key] = {
-        id: acc.id, username: acc.username, passHash: acc.passHash,
-        color: acc.color, balance: acc.balance, deposit: acc.deposit || 0,
-        creditScore: acc.creditScore || 0, loans: acc.loans || null,
+        id: acc.id,
+        username: acc.username,
+        realName: acc.realName || '',
+        passHash: acc.passHash,
+        color: acc.color,
+        balance: acc.balance,
+        deposit: acc.deposit || 0,
+        creditScore: acc.creditScore || 0,
+        loans: acc.loans || null,
         hackCooldowns: acc.hackCooldowns || {},
+        desktopApps: acc.desktopApps || null,
       };
     }
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
@@ -45,24 +50,27 @@ const loadAccounts = () => {
   } catch (e) { console.error('Failed to load accounts:', e.message); }
 };
 
-// In-memory store — accounts now persist to disk
-const accounts = new Map(); // username.toLowerCase() → account object
-const clients  = new Map(); // ws → clientObj
+const accounts = new Map();
+const clients  = new Map();
 const channels = new Map();
 const dms      = new Map();
 let   msgCounter = 0;
 
-// Load persisted accounts immediately
-
-// Debounced save — batches rapid changes into one disk write every 1.5s
 let _saveTimer = null;
 const scheduleSave = () => {
   if (_saveTimer) return;
   _saveTimer = setTimeout(() => { _saveTimer = null; saveAccounts(); }, 1500);
 };
+
+// Immediate save for critical operations
+const immediateSave = () => {
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  saveAccounts();
+};
+
 loadAccounts();
 
-// ── Shared Stock Market ────────────────────────────────────────────────────
+// ── Shared Stock Market ──────────────────────────────────────────────────────
 const STOCKS = [
   { id:'NRM',     name:'NormCorp',           sector:'Tech',     basePrice:142.50, vol:0.025, icon:'🖥️' },
   { id:'DMNN',    name:'Daemon Industries',  sector:'Tech',     basePrice:88.00,  vol:0.04,  icon:'👾' },
@@ -127,7 +135,12 @@ setInterval(() => {
   broadcastLeaderboard();
 }, 60000);
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Leaderboard broadcast every 10s ──────────────────────────────────────────
+setInterval(() => {
+  if (clients.size > 0) broadcastLeaderboard();
+}, 10000);
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 const DAEMON_MSGS = [
   'Still running. Just checking in.','I have been here longer than you.',
   'Your files are... interesting.','daemon.norm: process refuses to specify purpose.',
@@ -138,23 +151,26 @@ const DAEMON_MSGS = [
 
 const uid   = () => Math.random().toString(36).slice(2,10);
 const ts    = () => new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:false});
-const dmKey = (a,b) => [a,b].sort().join(':');
-const fmt   = (n)  => parseFloat(n).toFixed(2);
+const fmt   = (n) => parseFloat(n).toFixed(2);
 const phash = (pw) => require('crypto').createHash('sha256').update(pw+'normos_salt_v4').digest('hex');
 const COLORS= ['#4f9eff','#4ade80','#f59e0b','#f87171','#c084fc','#67e8f9','#fb923c','#a3e635'];
 
+// ── LOAN SYSTEM: Each tier has a fixed loan amount ────────────────────────────
+// Tiers unlock progressively larger fixed loan amounts (not caps, exact values)
 const CREDIT_TIERS = [
-  {name:'Base',     minScore:0,    loanCap:500,    color:'#6b7280'},
-  {name:'Fair',     minScore:100,  loanCap:2500,   color:'#f59e0b'},
-  {name:'Good',     minScore:300,  loanCap:10000,  color:'#4ade80'},
-  {name:'Excellent',minScore:600,  loanCap:50000,  color:'#4f9eff'},
-  {name:'Elite',    minScore:1000, loanCap:250000, color:'#c084fc'},
+  {name:'Base',     minScore:0,    loanAmount:500,    rate:0.05, termMs:300000,  color:'#6b7280'},
+  {name:'Fair',     minScore:100,  loanAmount:2500,   rate:0.10, termMs:900000,  color:'#f59e0b'},
+  {name:'Good',     minScore:300,  loanAmount:10000,  rate:0.15, termMs:1800000, color:'#4ade80'},
+  {name:'Excellent',minScore:600,  loanAmount:50000,  rate:0.20, termMs:3600000, color:'#4f9eff'},
+  {name:'Elite',    minScore:1000, loanAmount:250000, rate:0.25, termMs:7200000, color:'#c084fc'},
 ];
 const getCreditTier = (score) => {
   let t = CREDIT_TIERS[0];
   for (const c of CREDIT_TIERS) { if (score >= c.minScore) t=c; }
   return t;
 };
+
+const isAdmin = (username) => username && username.toLowerCase() === ADMIN_USERNAME;
 
 const broadcast = (msg,exclude=null) => {
   const data = JSON.stringify(msg);
@@ -187,10 +203,10 @@ const getOnlineList = () =>
       balance:a?.balance||0, netWorth:(a?.balance||0)+(a?.deposit||0)};
   });
 
-// ── WebSocket Server ───────────────────────────────────────────────────────
+// ── WebSocket Server ──────────────────────────────────────────────────────────
 const server = http.createServer((req,res) => {
   res.writeHead(200,{'Content-Type':'application/json'});
-  res.end(JSON.stringify({status:'NormOS Server v4.0',users:clients.size}));
+  res.end(JSON.stringify({status:'NormOS Server v5.0',users:clients.size}));
 });
 const wss = new WebSocketServer({server});
 
@@ -202,18 +218,25 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let msg; try { msg=JSON.parse(raw); } catch { return; }
 
-    // ── Auth ───────────────────────────────────────────────────────────
+    // ── Auth ─────────────────────────────────────────────────────────────
     if (msg.type==='auth:signup') {
       const uname=(msg.username||'').trim().slice(0,24).replace(/[^a-zA-Z0-9_]/g,'');
+      const displayName=(msg.displayName||uname).trim().slice(0,24).replace(/[^a-zA-Z0-9_]/g,'');
+      const realName=(msg.realName||'').trim().slice(0,100);
       const pw=(msg.password||'').trim();
       if (uname.length<2) { sendTo(ws,{type:'auth:error',message:'Username too short (min 2).'}); return; }
       if (pw.length<3)    { sendTo(ws,{type:'auth:error',message:'Password too short (min 3).'}); return; }
       if (accounts.has(uname.toLowerCase())) { sendTo(ws,{type:'auth:error',message:'Username taken.'}); return; }
-      const acc={id:uid(),username:uname,passHash:phash(pw),
-        color:COLORS[accounts.size%COLORS.length],balance:10000,
-        deposit:0,creditScore:0,loans:null,hackCooldowns:{}};
+      const acc={
+        id:uid(), username:displayName||uname,
+        realName: realName,
+        passHash:phash(pw),
+        color:COLORS[accounts.size%COLORS.length],
+        balance:10000, deposit:0, creditScore:0,
+        loans:null, hackCooldowns:{}, desktopApps:null
+      };
       accounts.set(uname.toLowerCase(),acc);
-      scheduleSave();
+      immediateSave();
       completeLogin(ws,client,acc);
       return;
     }
@@ -241,28 +264,29 @@ wss.on('connection', (ws) => {
     switch(msg.type) {
 
       case 'economy:sync':
-        // Client sends netWorth for leaderboard display only — never trust client balance
         broadcastLeaderboard(); break;
 
+      // ── Money transfer ──────────────────────────────────────────────
       case 'money:transfer': {
         const amt=parseFloat(msg.amount)||0;
         if (amt<=0) { sendTo(ws,{type:'money:transfer:fail',reason:'Invalid amount.'}); break; }
         if (amt>acc.balance) { sendTo(ws,{type:'money:transfer:fail',reason:'Insufficient funds.'}); break; }
-        const tacc=accounts.get((msg.to||'').toLowerCase());
+        // Accept username-based transfers only (not ID-based to prevent exploits)
+        const targetName=(msg.to||'').toLowerCase();
+        const tacc=accounts.get(targetName);
         if (!tacc) { sendTo(ws,{type:'money:transfer:fail',reason:'User not found.'}); break; }
+        if (tacc.username.toLowerCase()===client.username.toLowerCase()) {
+          sendTo(ws,{type:'money:transfer:fail',reason:'Cannot send money to yourself.'}); break;
+        }
         acc.balance-=amt; tacc.balance+=amt;
-        scheduleSave();
+        immediateSave();
         const tws=getWsByUsername(tacc.username);
         if (tws) sendTo(tws,{type:'money:received',from:acc.username,fromId:client.id,amount:amt,ts:ts()});
         sendTo(ws,{type:'money:transfer:ok',to:tacc.username,amount:amt,newBalance:acc.balance,ts:ts()});
-        const ann={id:++msgCounter,username:'NormBank',color:'#4ade80',
-          text:`💸 ${acc.username} sent $${fmt(amt)} to ${tacc.username}.`,ts:ts()};
-        channels.get('#general').push(ann);
-        broadcast({type:'chat:message',channel:'#general',message:ann});
         broadcastLeaderboard(); break;
       }
 
-      // ── Central Bank ─────────────────────────────────────────────────
+      // ── Central Bank ──────────────────────────────────────────────────
       case 'bank:get':
         sendTo(ws,{type:'bank:update',balance:acc.balance,deposit:acc.deposit||0,
           creditScore:acc.creditScore||0,loan:acc.loans||null,
@@ -272,7 +296,7 @@ wss.on('connection', (ws) => {
         const amt=parseFloat(msg.amount)||0;
         if (amt<=0||amt>acc.balance) { sendTo(ws,{type:'bank:error',message:'Invalid amount.'}); break; }
         acc.balance-=amt; acc.deposit=(acc.deposit||0)+amt;
-        scheduleSave();
+        immediateSave();
         sendTo(ws,{type:'bank:update',balance:acc.balance,deposit:acc.deposit,
           creditScore:acc.creditScore||0,loan:acc.loans||null,
           creditTier:getCreditTier(acc.creditScore||0)});
@@ -283,27 +307,35 @@ wss.on('connection', (ws) => {
         const amt=parseFloat(msg.amount)||0;
         if (amt<=0||amt>(acc.deposit||0)) { sendTo(ws,{type:'bank:error',message:'Invalid amount.'}); break; }
         acc.deposit-=amt; acc.balance+=amt;
-        scheduleSave();
+        immediateSave();
         sendTo(ws,{type:'bank:update',balance:acc.balance,deposit:acc.deposit,
           creditScore:acc.creditScore||0,loan:acc.loans||null,
           creditTier:getCreditTier(acc.creditScore||0)});
         broadcastLeaderboard(); break;
       }
 
+      // ── LOAN SYSTEM (fixed amount per tier) ──────────────────────────
       case 'bank:loan:request': {
         if (acc.loans?.active) { sendTo(ws,{type:'bank:error',message:'Already have an active loan.'}); break; }
-        const score=acc.creditScore||0;
-        const tier=getCreditTier(score);
-        const amt=parseFloat(msg.amount)||0;
-        if (amt<=0||amt>tier.loanCap) {
-          sendTo(ws,{type:'bank:error',message:`Credit tier "${tier.name}" cap: $${tier.loanCap.toLocaleString()}.`}); break;
+
+        const score = acc.creditScore || 0;
+        const tier  = getCreditTier(score);
+
+        // The fixed loan amount for this tier — client must send exact tier amount
+        const amt = tier.loanAmount;
+        const requestedAmt = parseFloat(msg.amount) || 0;
+        if (requestedAmt !== amt) {
+          sendTo(ws,{type:'bank:error',message:`Your tier "${tier.name}" has a fixed loan of $${amt.toLocaleString()}.`}); break;
         }
-        const rate=amt<=500?0.05:amt<=2500?0.10:amt<=10000?0.20:0.30;
-        const termMs=amt<=500?300000:amt<=2500?900000:amt<=10000?1800000:3600000;
-        acc.loans={active:true,principal:amt,rate,termMs,
-          borrowedAt:Date.now(),dueAt:Date.now()+termMs,totalDue:amt+amt*rate};
-        acc.balance+=amt;
-        scheduleSave();
+
+        acc.loans = {
+          active:true, principal:amt, rate:tier.rate, termMs:tier.termMs,
+          borrowedAt:Date.now(), dueAt:Date.now()+tier.termMs,
+          totalDue: parseFloat((amt + amt * tier.rate).toFixed(2)),
+          tier: tier.name,
+        };
+        acc.balance += amt;
+        immediateSave();
         sendTo(ws,{type:'bank:loan:approved',loan:acc.loans,newBalance:acc.balance}); break;
       }
 
@@ -315,7 +347,7 @@ wss.on('connection', (ws) => {
         const onTime=Date.now()<=acc.loans.dueAt;
         acc.creditScore=Math.max(0,(acc.creditScore||0)+(onTime?50:-100));
         acc.loans=null;
-        scheduleSave();
+        immediateSave();
         sendTo(ws,{type:'bank:loan:repaid',onTime,creditScore:acc.creditScore,newBalance:acc.balance});
         broadcastLeaderboard(); break;
       }
@@ -325,12 +357,12 @@ wss.on('connection', (ws) => {
         acc.balance=0; acc.deposit=0;
         acc.creditScore=Math.max(0,(acc.creditScore||0)-200);
         acc.loans=null;
-        scheduleSave();
+        immediateSave();
         sendTo(ws,{type:'bank:loan:defaulted',creditScore:acc.creditScore,newBalance:0});
         broadcastLeaderboard(); break;
       }
 
-      // ── Market ──────────────────────────────────────────────────────
+      // ── Market ────────────────────────────────────────────────────────
       case 'market:buy': {
         const stock=STOCKS.find(s=>s.id===msg.stockId);
         if (!stock||msg.shares<=0) break;
@@ -358,26 +390,36 @@ wss.on('connection', (ws) => {
         broadcastLeaderboard(); break;
       }
 
-      // ── Virus / Hacking ─────────────────────────────────────────────
+      // ── Virus / Hacking (server validates cost and cooldown) ──────────
       case 'virus:send': {
-        const COSTS={generic:50,ransomware:500,miner:200,glitch:100};
-        const vt=msg.virusType||'generic';
-        const cost=COSTS[vt]||50;
-        if (!acc.hackCooldowns) acc.hackCooldowns={};
-        const ck=`${vt}:${msg.to}`;
-        const last=acc.hackCooldowns[ck]||0;
-        if (Date.now()-last<60000) {
-          const rem=Math.ceil((60000-(Date.now()-last))/1000);
+        const COSTS = {generic:50, ransomware:500, miner:200, glitch:100};
+        const vt    = msg.virusType || 'generic';
+        const cost  = COSTS[vt] || 50;
+
+        if (!acc.hackCooldowns) acc.hackCooldowns = {};
+        const ck   = `${vt}:${msg.to}`;
+        const last = acc.hackCooldowns[ck] || 0;
+
+        // Enforce 60-second cooldown server-side
+        if (Date.now()-last < 60000) {
+          const rem = Math.ceil((60000-(Date.now()-last))/1000);
           sendTo(ws,{type:'virus:fail',reason:`Cooldown: ${rem}s remaining.`}); break;
         }
-        if (acc.balance<cost) { sendTo(ws,{type:'virus:fail',reason:`Need $${cost}.`}); break; }
-        const tws=getWsById(msg.to);
+
+        // Enforce balance check and deduct cost on server
+        if (acc.balance < cost) { sendTo(ws,{type:'virus:fail',reason:`Need $${cost} to send ${vt}.`}); break; }
+
+        const tws = getWsById(msg.to);
         if (!tws) { sendTo(ws,{type:'virus:fail',reason:'Target offline.'}); break; }
-        acc.balance-=cost;
-        scheduleSave();
-        acc.hackCooldowns[ck]=Date.now();
+
+        // Deduct cost from attacker BEFORE sending
+        acc.balance -= cost;
+        immediateSave();
+        acc.hackCooldowns[ck] = Date.now();
+
         sendTo(tws,{type:'virus:incoming',from:acc.username,fromId:client.id,virusType:vt,ts:ts()});
-        sendTo(ws,{type:'virus:sent',to:clients.get(tws)?.username,virusType:vt,cost,ts:ts()});
+        sendTo(ws,{type:'virus:sent',to:clients.get(tws)?.username,virusType:vt,cost,newBalance:acc.balance,ts:ts()});
+
         const ve={id:++msgCounter,username:'daemon.norm',color:'#f87171',
           text:`☣️ ${acc.username} deployed ${vt} vs ${clients.get(tws)?.username}.`,ts:ts()};
         channels.get('#daemon-watch').push(ve);
@@ -386,21 +428,22 @@ wss.on('connection', (ws) => {
       }
 
       case 'virus:damage': {
-        const stolen=Math.min(Math.max(0,parseFloat(msg.stolen)||0),acc.balance);
-        acc.balance=Math.max(0,acc.balance-stolen);
-        scheduleSave();
-        const aacc=accounts.get((msg.fromUsername||'').toLowerCase());
+        // Server validates stolen amount can't exceed balance
+        const stolen = Math.min(Math.max(0, parseFloat(msg.stolen)||0), acc.balance);
+        acc.balance  = Math.max(0, acc.balance - stolen);
+        immediateSave();
+        const aacc = accounts.get((msg.fromUsername||'').toLowerCase());
         if (aacc) {
-          aacc.balance+=stolen;
+          aacc.balance += stolen;
           scheduleSave();
-          const aws=getWsByUsername(aacc.username);
+          const aws = getWsByUsername(aacc.username);
           if (aws) sendTo(aws,{type:'virus:loot',amount:stolen,from:acc.username});
         }
         sendTo(ws,{type:'economy:balance:update',balance:acc.balance});
         broadcastLeaderboard(); break;
       }
 
-      // ── Chat ────────────────────────────────────────────────────────
+      // ── Chat ──────────────────────────────────────────────────────────
       case 'chat:message': {
         const ch=msg.channel||'#general';
         if (!channels.has(ch)) channels.set(ch,[]);
@@ -418,26 +461,6 @@ wss.on('connection', (ws) => {
         broadcast({type:'chat:joined',channel:ch,username:acc.username,color:acc.color}); break;
       }
 
-      // ── DMs ─────────────────────────────────────────────────────────
-      case 'dm:send': {
-        const key=dmKey(client.id,msg.to);
-        const e={id:++msgCounter,fromId:client.id,from:acc.username,color:acc.color,
-          text:(msg.text||'').slice(0,1000),
-          file:msg.file?{name:msg.file.name,dataUrl:msg.file.dataUrl,type:msg.file.type}:null,
-          ts:ts()};
-        if (!dms.has(key)) dms.set(key,[]);
-        dms.get(key).push(e);
-        if (dms.get(key).length>100) dms.get(key).shift();
-        const tws=getWsById(msg.to);
-        if (tws) sendTo(tws,{type:'dm:receive',from:acc.username,fromId:client.id,
-          color:acc.color,text:e.text,file:e.file,ts:e.ts});
-        sendTo(ws,{type:'dm:sent',to:msg.to,text:e.text,file:e.file,ts:e.ts}); break;
-      }
-
-      case 'dm:history':
-        sendTo(ws,{type:'dm:history',withId:msg.withId,
-          messages:(dms.get(dmKey(client.id,msg.withId))||[]).slice(-50)}); break;
-
       case 'leaderboard:get':
         sendTo(ws,{type:'leaderboard:rich',leaderboard:leaderboardData()}); break;
 
@@ -445,26 +468,112 @@ wss.on('connection', (ws) => {
         broadcast({type:'clipboard:incoming',from:acc.username,color:acc.color,
           text:(msg.text||'').slice(0,2000),ts:ts()},ws); break;
 
+      // ── Desktop apps sync ─────────────────────────────────────────────
+      case 'desktop:save': {
+        if (Array.isArray(msg.apps)) {
+          acc.desktopApps = msg.apps.slice(0, 50); // max 50 desktop icons
+          scheduleSave();
+        }
+        break;
+      }
+
+      case 'desktop:get':
+        sendTo(ws,{type:'desktop:data',apps:acc.desktopApps||null}); break;
+
+      // ── Admin commands ─────────────────────────────────────────────────
+      case 'admin:kick': {
+        if (!isAdmin(acc.username)) { sendTo(ws,{type:'admin:error',message:'Not authorized.'}); break; }
+        const targetWs = getWsByUsername(msg.username||'');
+        if (!targetWs) { sendTo(ws,{type:'admin:error',message:'User not online.'}); break; }
+        sendTo(targetWs,{type:'auth:kicked',message:'You have been kicked by an administrator.'});
+        setTimeout(()=>{ try{targetWs.close();}catch{} clients.delete(targetWs); },500);
+        sendTo(ws,{type:'admin:ok',message:`Kicked ${msg.username}.`});
+        broadcastLeaderboard(); break;
+      }
+
+      case 'admin:setbalance': {
+        if (!isAdmin(acc.username)) { sendTo(ws,{type:'admin:error',message:'Not authorized.'}); break; }
+        const tacc = accounts.get((msg.username||'').toLowerCase());
+        if (!tacc) { sendTo(ws,{type:'admin:error',message:'User not found.'}); break; }
+        const newBal = parseFloat(msg.balance);
+        if (isNaN(newBal)||newBal<0) { sendTo(ws,{type:'admin:error',message:'Invalid balance.'}); break; }
+        tacc.balance = newBal;
+        immediateSave();
+        const tws2 = getWsByUsername(tacc.username);
+        if (tws2) sendTo(tws2,{type:'bank:update',balance:tacc.balance,deposit:tacc.deposit||0,
+          creditScore:tacc.creditScore||0,loan:tacc.loans||null,
+          creditTier:getCreditTier(tacc.creditScore||0)});
+        sendTo(ws,{type:'admin:ok',message:`Set ${msg.username} balance to $${fmt(newBal)}.`});
+        broadcastLeaderboard(); break;
+      }
+
+      case 'admin:getusers': {
+        if (!isAdmin(acc.username)) { sendTo(ws,{type:'admin:error',message:'Not authorized.'}); break; }
+        const userList = [...accounts.values()].map(a=>({
+          username: a.username,
+          realName: a.realName || '(not set)',
+          balance: a.balance,
+          deposit: a.deposit||0,
+          creditScore: a.creditScore||0,
+          hasLoan: !!(a.loans?.active),
+        }));
+        sendTo(ws,{type:'admin:users',users:userList}); break;
+      }
+
+      case 'admin:deleteaccount': {
+        if (!isAdmin(acc.username)) { sendTo(ws,{type:'admin:error',message:'Not authorized.'}); break; }
+        const delName = (msg.username||'').toLowerCase();
+        if (!delName) { sendTo(ws,{type:'admin:error',message:'No username provided.'}); break; }
+        if (delName === ADMIN_USERNAME) { sendTo(ws,{type:'admin:error',message:'Cannot delete admin account.'}); break; }
+        const delAcc = accounts.get(delName);
+        if (!delAcc) { sendTo(ws,{type:'admin:error',message:'Account not found.'}); break; }
+        // Kick the user if online
+        const delWs = getWsByUsername(delAcc.username);
+        if (delWs) {
+          sendTo(delWs,{type:'auth:kicked',message:'Your account has been deleted by an administrator.'});
+          setTimeout(()=>{ try{delWs.close();}catch{} clients.delete(delWs); },500);
+        }
+        accounts.delete(delName);
+        immediateSave();
+        sendTo(ws,{type:'admin:ok',message:`Account "${delAcc.username}" deleted.`});
+        broadcastLeaderboard(); break;
+      }
+
       case 'ping': sendTo(ws,{type:'pong',ts:Date.now()}); break;
     }
   });
 
   ws.on('close', () => {
-    const c=clients.get(ws);
+    const c = clients.get(ws);
     if (c?.authenticated) {
       console.log(`[-] ${c.username} disconnected`);
+      // Save immediately on disconnect to prevent refresh exploits
+      const disconnAcc = accounts.get(c.username.toLowerCase());
+      if (disconnAcc) {
+        immediateSave();
+      }
       broadcast({type:'user:leave',id:c.id,username:c.username});
       broadcastLeaderboard();
     }
     clients.delete(ws);
   });
-  ws.on('error', () => clients.delete(ws));
+  ws.on('error', () => {
+    const c = clients.get(ws);
+    if (c?.authenticated) {
+      const errAcc = accounts.get(c.username?.toLowerCase());
+      if (errAcc) immediateSave();
+    }
+    clients.delete(ws);
+  });
 });
 
 function completeLogin(ws, client, acc) {
   client.id=acc.id; client.username=acc.username;
   client.color=acc.color; client.authenticated=true;
   console.log(`[+] ${acc.username} logged in (${clients.size} online)`);
+
+  const isAdminUser = isAdmin(acc.username);
+
   sendTo(ws,{
     type:'auth:ok', id:acc.id, username:acc.username, color:acc.color,
     balance:acc.balance, deposit:acc.deposit||0,
@@ -472,6 +581,8 @@ function completeLogin(ws, client, acc) {
     creditTier:getCreditTier(acc.creditScore||0),
     online:getOnlineList(), channels:[...channels.keys()],
     leaderboard:leaderboardData(),
+    isAdmin: isAdminUser,
+    desktopApps: acc.desktopApps || null,
     market:{prices:{...stockPrices},
       history:Object.fromEntries(Object.entries(priceHistory).map(([k,v])=>[k,v.slice(-30)]))},
   });
@@ -491,12 +602,12 @@ setInterval(() => {
 }, 60000+Math.random()*120000);
 
 server.listen(PORT, () => {
-  console.log(`\n  NormOS Server v4.0 — ws://localhost:${PORT}`);
+  console.log(`\n  NormOS Server v5.0 — ws://localhost:${PORT}`);
   console.log(`  💾 DB: ${DB_FILE}`);
   console.log(`  👥 Accounts loaded: ${accounts.size}`);
+  console.log(`  👑 Admin: ${ADMIN_USERNAME}`);
   if (!process.env.DATA_DIR) {
-    console.log(`  ⚠  DATA_DIR not set. On Render free tier, accounts WILL be wiped on restart.`);
-    console.log(`     Set DATA_DIR=/data and add a Persistent Disk in Render dashboard to fix this.`);
+    console.log(`  ⚠  DATA_DIR not set. Set DATA_DIR=/data for persistent storage.`);
   } else {
     console.log(`  ✅ Persistent storage at ${process.env.DATA_DIR}`);
   }
