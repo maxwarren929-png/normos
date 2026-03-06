@@ -95,9 +95,7 @@ const FileExplorerApp = {
           if (entry.type === 'dir') {
             navigate(path);
           } else {
-            // Open file in notepad
-            const content = FS.readFile(path) || '';
-            EventBus.emit('app:open', { appId: 'notepad', filePath: path, content });
+            openFile(path, entry.name);
           }
         });
 
@@ -155,6 +153,39 @@ const FileExplorerApp = {
     // FS change updates
     EventBus.on('fs:changed', () => renderFiles());
 
+    // ── File opener — routes to correct app by extension ────────────────────
+    const openFile = (path, name) => {
+      const ext = (name.split('.').pop() || '').toLowerCase();
+      const imageExts = ['png','jpg','jpeg','bmp','gif','webp','svg'];
+      const textExts  = ['txt','md','js','py','html','css','json','sh','conf','csv','norm'];
+
+      if (ext === 'norm' || name === 'draw.png') {
+        // draw.png or .norm files open in paint
+        EventBus.emit('app:open', { appId: 'paint', filePath: path });
+        return;
+      }
+      if (imageExts.includes(ext)) {
+        // Image files open in image viewer
+        const fileContent = FS.readFile(path) || '';
+        // If content is a data URL, open in imagedrop
+        if (fileContent.startsWith('data:')) {
+          EventBus.emit('app:open', { appId: 'imagedrop', filePath: path, content: fileContent });
+        } else {
+          // Open in paint for editing
+          EventBus.emit('app:open', { appId: 'paint', filePath: path });
+        }
+        return;
+      }
+      if (textExts.includes(ext) || !ext) {
+        const fileContent = FS.readFile(path) || '';
+        EventBus.emit('app:open', { appId: 'texteditor', filePath: path, content: fileContent });
+        return;
+      }
+      // Default: open in text editor
+      const fileContent = FS.readFile(path) || '';
+      EventBus.emit('app:open', { appId: 'texteditor', filePath: path, content: fileContent });
+    };
+
     // Initial render
     navigate('/home/norm', false);
     return wrap;
@@ -174,12 +205,8 @@ function getFileIcon(name) {
 
 function showFileContextMenu(e, path, name, type, onAction) {
   const items = [
-    { icon: '📂', label: type === 'dir' ? 'Open' : 'Open in Notepad', action: () => {
-      if (type === 'dir') { /* handled by dblclick */ }
-      else {
-        const content = FS.readFile(path) || '';
-        EventBus.emit('app:open', { appId: 'notepad', filePath: path, content });
-      }
+    { icon: '📂', label: type === 'dir' ? 'Open' : 'Open', action: () => {
+      if (type !== 'dir') openFile(path, name);
     }},
     { sep: true },
     { icon: '✏️', label: 'Rename', action: () => {
@@ -201,4 +228,3 @@ function showFileContextMenu(e, path, name, type, onAction) {
   ];
   OS.showContextMenu(e.clientX, e.clientY, items);
 }
-
