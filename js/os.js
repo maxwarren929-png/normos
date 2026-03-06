@@ -145,8 +145,22 @@ const OS = (() => {
         <button id="auth-tab-login"  style="flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;">Sign In</button>
         <button id="auth-tab-signup" style="flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;">Create Account</button>
       </div>
-      <input class="login-input" type="text"     id="auth-username" placeholder="Username" autocomplete="off" maxlength="24" />
-      <input class="login-input" type="password" id="auth-password" placeholder="Password" autocomplete="off" />
+      <!-- Login fields -->
+      <div id="auth-login-fields">
+        <input class="login-input" type="text"     id="auth-username" placeholder="Display Name" autocomplete="off" maxlength="24" />
+        <input class="login-input" type="password" id="auth-password" placeholder="Password" autocomplete="off" />
+      </div>
+      <!-- Signup fields (hidden by default) -->
+      <div id="auth-signup-fields" style="display:none;">
+        <div style="font-size:0.68rem;color:var(--text3);margin-bottom:2px;">Real Name <span style="color:#f59e0b;">(admin-only, private)</span></div>
+        <div style="font-size:0.62rem;color:var(--text3);margin-bottom:4px;font-style:italic;">Enter your real name here.</div>
+        <input class="login-input" type="text" id="auth-realname" placeholder="Your real name" autocomplete="off" maxlength="100" />
+        <div style="font-size:0.68rem;color:var(--text3);margin-bottom:2px;margin-top:6px;">Display Name <span style="color:#4ade80;">(public)</span></div>
+        <div style="font-size:0.62rem;color:var(--text3);margin-bottom:4px;font-style:italic;">Do NOT put your real name here.</div>
+        <input class="login-input" type="text" id="auth-displayname" placeholder="Public username" autocomplete="off" maxlength="24" />
+        <div style="font-size:0.68rem;color:var(--text3);margin-bottom:2px;margin-top:6px;">Password</div>
+        <input class="login-input" type="password" id="auth-signup-password" placeholder="Password (min 3 chars)" autocomplete="off" />
+      </div>
       <button class="login-btn" id="auth-submit">Sign In →</button>
       <div id="auth-status" style="font-size:0.7rem;color:var(--text3);margin-top:6px;min-height:18px;text-align:center;"></div>
       <div class="login-hint">Server: wss://normos-server.onrender.com</div>
@@ -158,16 +172,22 @@ const OS = (() => {
       const ts = card.querySelector('#auth-tab-signup');
       const ti = card.querySelector('#auth-title');
       const sb = card.querySelector('#auth-submit');
+      const loginFields  = card.querySelector('#auth-login-fields');
+      const signupFields = card.querySelector('#auth-signup-fields');
       if (m === 'login') {
         tl.style.cssText = 'flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;';
         ts.style.cssText = 'flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;';
         ti.textContent   = 'Sign In';
         sb.textContent   = 'Sign In →';
+        if (loginFields)  loginFields.style.display  = '';
+        if (signupFields) signupFields.style.display = 'none';
       } else {
         ts.style.cssText = 'flex:1;padding:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:5px;cursor:pointer;font-size:0.8rem;font-weight:600;';
         tl.style.cssText = 'flex:1;padding:6px;border:1px solid var(--border);background:var(--bg3);color:var(--text2);border-radius:5px;cursor:pointer;font-size:0.8rem;';
         ti.textContent   = 'Create Account';
         sb.textContent   = 'Create Account →';
+        if (loginFields)  loginFields.style.display  = 'none';
+        if (signupFields) signupFields.style.display = '';
       }
     };
 
@@ -211,26 +231,33 @@ const OS = (() => {
     Network.on('connected', onConnected);
 
     const doSubmit = () => {
-      const uname = (card.querySelector('#auth-username').value||'').trim();
-      const pw    = (card.querySelector('#auth-password').value||'').trim();
-      if (!uname) { setStatus('Enter a username.', 'var(--red)'); return; }
+      let uname, pw, realName, displayName;
+      if (mode === 'login') {
+        uname = (card.querySelector('#auth-username')?.value||'').trim();
+        pw    = (card.querySelector('#auth-password')?.value||'').trim();
+      } else {
+        displayName = (card.querySelector('#auth-displayname')?.value||'').trim();
+        realName    = (card.querySelector('#auth-realname')?.value||'').trim();
+        pw          = (card.querySelector('#auth-signup-password')?.value||'').trim();
+        uname       = displayName; // use displayName as the account key
+      }
+      if (!uname) { setStatus('Enter a ' + (mode==='login'?'display name':'display name') + '.', 'var(--red)'); return; }
       if (!pw)    { setStatus('Enter a password.', 'var(--red)'); return; }
       if (!Network.isConnected()) {
         setStatus('\u23f3 Server waking up\u2026 (~30s on free tier). Will sign in automatically.', '#f59e0b');
-        // Store credentials and auto-submit once server connects
         const _onReady = () => {
           Network.off('connected', _onReady);
           setStatus('Authenticating\u2026', 'var(--text3)');
           if (mode === 'login') Network.login(uname, pw);
-          else                  Network.signup(uname, pw);
+          else                  Network.signup(uname, pw, {realName, displayName});
         };
         Network.on('connected', _onReady);
-        Network.connect(); // kick reconnect immediately
+        Network.connect();
         return;
       }
       setStatus('Authenticating\u2026', 'var(--text3)');
       if (mode === 'login') Network.login(uname, pw);
-      else                  Network.signup(uname, pw);
+      else                  Network.signup(uname, pw, {realName, displayName});
     };
 
     card.querySelector('#auth-submit').addEventListener('click', doSubmit);
@@ -355,6 +382,8 @@ const OS = (() => {
         { icon:'✏️', label:'NormEdit',          action: ()=>apps.open('texteditor') },
         { sep:true },
         { icon:'⚙️', label:'Settings',          action: ()=>apps.open('settings') },
+        { sep:true },
+        { icon:'📌', label:'Add App to Desktop…', action: ()=>showAddToDesktopMenu(e.clientX, e.clientY) },
       ]);
     });
 
@@ -384,15 +413,15 @@ const OS = (() => {
     const container = document.getElementById('desktop-icons');
     container.innerHTML = '';
 
-    const iconApps = [
+    if (!state.desktopApps) state.desktopApps = [
       'terminal','files','browser','texteditor',
       'sysmon','snake','chat','paint',
       'normsheet','calculator','clock','music','calendar',
       'imagedrop','stocks','leaderboard',
-      // v4.0 apps
       'normtok','social','bank','miner',
       'casino','settings','hub',
     ];
+    const iconApps = state.desktopApps;
 
     const colH = 90, colW = 90, startX = 12, startY = 12;
     const maxRows = Math.floor((window.innerHeight - 44 - startY) / colH);
@@ -459,9 +488,11 @@ const OS = (() => {
         e.preventDefault(); e.stopPropagation();
         document.querySelectorAll('.desk-icon').forEach(i => i.classList.remove('selected'));
         el.classList.add('selected');
+        const isCustomApp = (state.desktopApps||[]).includes(id);
         showContextMenu(e.clientX, e.clientY, [
           { icon: app.icon, label: `Open ${app.title}`,  action: ()=>apps.open(id) },
           { icon: '📌',     label: 'Reset Position',      action: ()=>{ delete state.iconPositions[id]; saveState(); buildDesktopIcons(); } },
+          { icon: '❌',     label: 'Remove from Desktop', action: ()=>removeFromDesktop(id) },
         ]);
       });
 
@@ -473,6 +504,60 @@ const OS = (() => {
         document.querySelectorAll('.desk-icon').forEach(i => i.classList.remove('selected'));
       }
     });
+  };
+
+  // ── Add app to desktop picker ────────────────────────────────────────────
+  const showAddToDesktopMenu = (x, y) => {
+    const notOnDesktop = Object.entries(appRegistry)
+      .filter(([id, def]) => !def.hidden && !(state.desktopApps||[]).includes(id))
+      .map(([id, def]) => ({
+        icon: def.icon,
+        label: def.title,
+        action: () => addToDesktop(id),
+      }));
+    if (!notOnDesktop.length) {
+      notify('📌', 'Desktop', 'All apps are already on the desktop.'); return;
+    }
+    showContextMenu(x, y, notOnDesktop);
+  };
+
+  // ── Desktop app management ──────────────────────────────────────────────
+  // Default desktop apps (shown before any customization)
+  const DEFAULT_DESKTOP_APPS = [
+    'terminal','files','browser','texteditor',
+    'sysmon','snake','chat','paint',
+    'normsheet','calculator','clock','music','calendar',
+    'imagedrop','stocks','leaderboard',
+    'normtok','social','bank','miner',
+    'casino','settings','hub',
+  ];
+
+  if (!state.desktopApps) state.desktopApps = [...DEFAULT_DESKTOP_APPS];
+
+  const removeFromDesktop = (appId) => {
+    if (!state.desktopApps) state.desktopApps = [...DEFAULT_DESKTOP_APPS];
+    state.desktopApps = state.desktopApps.filter(id => id !== appId);
+    delete state.iconPositions[appId];
+    saveState();
+    // Sync to server if connected
+    if (typeof Network !== 'undefined' && Network.isConnected())
+      Network.send({type:'desktop:save', apps: state.desktopApps});
+    buildDesktopIcons();
+    notify('📌', 'Desktop', `Removed from desktop.`);
+  };
+
+  const addToDesktop = (appId) => {
+    if (!state.desktopApps) state.desktopApps = [...DEFAULT_DESKTOP_APPS];
+    if (state.desktopApps.includes(appId)) {
+      notify('📌', 'Desktop', 'Already on desktop.'); return;
+    }
+    state.desktopApps.push(appId);
+    saveState();
+    if (typeof Network !== 'undefined' && Network.isConnected())
+      Network.send({type:'desktop:save', apps: state.desktopApps});
+    buildDesktopIcons();
+    const def = appRegistry[appId];
+    notify('📌', 'Desktop', `Added ${def?.title||appId} to desktop.`);
   };
 
   // ── Window snap ──────────────────────────────────────────────────────────
@@ -702,5 +787,5 @@ const OS = (() => {
 
   EventBus.on('os:ready', () => { initWalletTray(); });
 
-  return { state, saveState, apps, ui, notify, setTheme, showContextMenu, login, toggleClockWidget, appRegistry };
+  return { state, saveState, apps, ui, notify, setTheme, showContextMenu, login, toggleClockWidget, appRegistry, addToDesktop, removeFromDesktop };
 })();
