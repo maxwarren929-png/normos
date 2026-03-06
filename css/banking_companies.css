@@ -1,0 +1,48 @@
+/* ============================================================
+   NormOS — css_banking_companies.css  (v6 — integrated)
+   Only the classes still used after banking/companies were
+   merged into apps_loans.js and apps_stocks.js
+   ============================================================ */
+
+/* ── Stocks app: shareholders section ─────────────────────── */
+.sd-shareholders {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.sdsh-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+  color: var(--text);
+}
+.sdsh-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.22rem 0;
+  font-size: 0.65rem;
+}
+
+/* ── Stocks app: company stats row ───────────────────────── */
+.sdst-item {
+  flex: 1;
+  min-width: 90px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+}
+.sdst-label {
+  font-size: 0.58rem;
+  color: var(--text3);
+  margin-bottom: 0.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sdst-val {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
