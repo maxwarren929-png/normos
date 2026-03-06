@@ -1,6 +1,6 @@
 /**
- * NormOS — apps/loans.js (v4 — Central Bank)
- * NormBank: Deposits, Withdrawals, Interest, Credit Score, Loans
+ * NormOS — apps/loans.js (v5 — Fixed $500 Loans)
+ * NormBank: Deposits, Withdrawals, Interest, Credit Score, Fixed $500 Loans
  */
 
 const LoansApp = {
@@ -19,15 +19,16 @@ const LoansApp = {
     const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
     const CREDIT_TIERS = [
-      {name:'Base',     minScore:0,    loanCap:500,    color:'#6b7280',icon:'⬛'},
-      {name:'Fair',     minScore:100,  loanCap:2500,   color:'#f59e0b',icon:'🟡'},
-      {name:'Good',     minScore:300,  loanCap:10000,  color:'#4ade80',icon:'🟢'},
-      {name:'Excellent',minScore:600,  loanCap:50000,  color:'#4f9eff',icon:'🔵'},
-      {name:'Elite',    minScore:1000, loanCap:250000, color:'#c084fc',icon:'💜'},
+      {name:'Base',     minScore:0,    loanAmount:500,    rate:0.05, termMs:300000,  color:'#6b7280',icon:'⬛'},
+      {name:'Fair',     minScore:100,  loanAmount:2500,   rate:0.10, termMs:900000,  color:'#f59e0b',icon:'🟡'},
+      {name:'Good',     minScore:300,  loanAmount:10000,  rate:0.15, termMs:1800000, color:'#4ade80',icon:'🟢'},
+      {name:'Excellent',minScore:600,  loanAmount:50000,  rate:0.20, termMs:3600000, color:'#4f9eff',icon:'🔵'},
+      {name:'Elite',    minScore:1000, loanAmount:250000, rate:0.25, termMs:7200000, color:'#c084fc',icon:'💜'},
     ];
+
     const getCreditTier = (score) => {
       let t = CREDIT_TIERS[0];
-      for (const c of CREDIT_TIERS) { if (score >= c.minScore) t=c; }
+      for (const ct of CREDIT_TIERS) { if (score >= ct.minScore) t=ct; }
       return t;
     };
 
@@ -67,6 +68,12 @@ const LoansApp = {
       const tlM  = Math.floor(tl/60000), tlS=Math.floor((tl%60000)/1000);
       const maxScore=1200, pct=Math.min(100,((s.creditScore||0)/maxScore)*100);
       const nextTier=CREDIT_TIERS.find(t=>t.minScore>(s.creditScore||0))||CREDIT_TIERS[CREDIT_TIERS.length-1];
+
+      // Loan amount is fixed by tier
+      const loanAmt      = tier.loanAmount;
+      const loanInterest = loanAmt * tier.rate;
+      const loanTotal    = loanAmt + loanInterest;
+      const termMinutes  = Math.round(tier.termMs / 60000);
 
       wrap.innerHTML = `
         <div class="bank-layout">
@@ -122,20 +129,26 @@ const LoansApp = {
           </div>` : `
           <div class="bank-section">
             <div class="bank-section-title">📋 Apply for a Loan</div>
+            <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:8px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+                <span style="font-size:0.82rem;font-weight:bold;color:var(--text1);">💵 Loan Amount</span>
+                <span style="font-size:1.1rem;font-weight:bold;color:#4ade80;">$${fmt(loanAmt)}</span>
+              </div>
+              <div style="font-size:0.72rem;color:var(--text3);margin-bottom:4px;">Interest: ${(tier.rate*100).toFixed(0)}% → Total repay: <strong style="color:var(--text1);">$${fmt(loanTotal)}</strong></div>
+              <div style="font-size:0.72rem;color:var(--text3);">Term: ${termMinutes} minutes to repay</div>
+            </div>
             <div style="font-size:0.75rem;color:var(--text2);margin-bottom:8px;">
-              Your tier <strong style="color:${tier.color}">${esc(tier.name)}</strong> allows loans up to
-              <strong style="color:${tier.color}">$${tier.loanCap.toLocaleString()}</strong>
+              Your tier <strong style="color:${tier.color}">${esc(tier.icon)} ${esc(tier.name)}</strong> — fixed loan of <strong style="color:#4ade80;">$${loanAmt.toLocaleString()}</strong>
             </div>
-            <div class="bank-row">
-              <input class="bank-input" id="bank-loan-amt-${iid}" type="number" placeholder="Loan amount" min="1" max="${tier.loanCap}" />
-              <button class="bank-btn accent" id="bank-loan-btn-${iid}">Request Loan</button>
-            </div>
-            <div class="bank-tier-ladder">
+            <button class="bank-btn accent" id="bank-loan-btn-${iid}" style="width:100%;">Request $${loanAmt.toLocaleString()} Loan</button>
+            <div class="bank-tier-ladder" style="margin-top:10px;">
+              <div style="font-size:0.68rem;color:var(--text3);margin-bottom:6px;text-transform:uppercase;letter-spacing:.06em;">Credit Tier Ladder — unlock higher tiers for larger fixed loans</div>
               ${CREDIT_TIERS.map(t=>`
                 <div class="bank-tier-item ${(s.creditScore||0)>=t.minScore?'unlocked':'locked'}">
                   <span>${t.icon}</span>
                   <span style="font-weight:600;color:${t.color}">${esc(t.name)}</span>
-                  <span>up to $${t.loanCap.toLocaleString()}</span>
+                  <span style="color:${t.color};font-weight:600;">$${t.loanAmount.toLocaleString()}</span>
+                  <span style="font-size:0.6rem;color:var(--text3);">${(t.rate*100).toFixed(0)}% / ${Math.round(t.termMs/60000)}min</span>
                   <span style="margin-left:auto;color:var(--text3)">${t.minScore}+ pts</span>
                 </div>`).join('')}
             </div>
@@ -164,11 +177,20 @@ const LoansApp = {
       });
 
       wrap.querySelector(`#bank-loan-btn-${iid}`)?.addEventListener('click',()=>{
-        const amt=parseFloat(wrap.querySelector(`#bank-loan-amt-${iid}`)?.value)||0;
-        if(amt<=0||amt>tier.loanCap){if(typeof OS!=='undefined')OS.notify('🏦','Bank',`Max loan: $${tier.loanCap.toLocaleString()}`);return;}
-        if(!confirm(`Borrow $${fmt(amt)}?\n\nMissing the deadline = EVERYTHING is seized.`))return;
-        if(typeof Network!=='undefined'&&Network.isConnected()){Network.send({type:'bank:loan:request',amount:amt});}
-        else{const rate=amt<=500?0.05:amt<=2500?0.10:0.20;const tms=amt<=500?300000:amt<=2500?900000:1800000;bankState.loan={active:true,principal:amt,rate,termMs:tms,borrowedAt:Date.now(),dueAt:Date.now()+tms,totalDue:amt+amt*rate};bankState.balance+=amt;if(typeof Economy!=='undefined'){Economy.state.balance+=amt;Economy.save();Economy.updateWalletDisplay();}render();}
+        const amt = tier.loanAmount;
+        const total = fmt(amt + amt * tier.rate);
+        const mins = Math.round(tier.termMs / 60000);
+        if(!confirm(`Borrow $${amt.toLocaleString()} (${(tier.rate*100).toFixed(0)}% interest = $${total} total)?\n\nYou have ${mins} minutes to repay.\n\nMissing the deadline = NormBank seizes EVERYTHING.`))return;
+        if(typeof Network!=='undefined'&&Network.isConnected()){
+          Network.send({type:'bank:loan:request',amount:amt});
+        } else {
+          // Offline fallback
+          bankState.loan={active:true,principal:amt,rate:tier.rate,termMs:tier.termMs,
+            borrowedAt:Date.now(),dueAt:Date.now()+tier.termMs,totalDue:parseFloat((amt+amt*tier.rate).toFixed(2))};
+          bankState.balance+=amt;
+          if(typeof Economy!=='undefined'){Economy.state.balance+=amt;Economy.save();Economy.updateWalletDisplay();}
+          render();
+        }
       });
 
       if(loan?.active) startLoanTimer();
@@ -179,7 +201,7 @@ const LoansApp = {
       const onBU=(d)=>{bankState={...bankState,...d};if(d.balance!==undefined&&typeof Economy!=='undefined'){Economy.state.balance=d.balance;Economy.save();Economy.updateWalletDisplay();}render();};
       const onInt=(d)=>{bankState.deposit=d.newDeposit;if(typeof OS!=='undefined')OS.notify('🏦','NormBank',`+$${fmt(d.amount)} deposit interest!`);render();};
       const onLA=(d)=>{bankState.loan=d.loan;bankState.balance=d.newBalance;if(typeof Economy!=='undefined'){Economy.state.balance=d.newBalance;Economy.save();Economy.updateWalletDisplay();}if(typeof OS!=='undefined')OS.notify('🏦','Loan Approved',`$${fmt(d.loan.principal)} added!`);render();};
-      const onLR=(d)=>{bankState.loan=null;bankState.creditScore=d.creditScore;bankState.balance=d.newBalance;bankState.creditScore=d.creditScore;if(typeof Economy!=='undefined'){Economy.state.balance=d.newBalance;Economy.save();Economy.updateWalletDisplay();}if(typeof OS!=='undefined')OS.notify('🏦','Loan',d.onTime?'Repaid on time! +50 score':'Late repayment. -100 score');render();};
+      const onLR=(d)=>{bankState.loan=null;bankState.creditScore=d.creditScore;bankState.balance=d.newBalance;if(typeof Economy!=='undefined'){Economy.state.balance=d.newBalance;Economy.save();Economy.updateWalletDisplay();}if(typeof OS!=='undefined')OS.notify('🏦','Loan',d.onTime?'Repaid on time! +50 score':'Late repayment. -100 score');render();};
       const onLD=(d)=>{bankState.loan=null;bankState.balance=0;bankState.deposit=0;bankState.creditScore=d.creditScore;if(typeof Economy!=='undefined'){Economy.state.balance=0;Economy.save();Economy.updateWalletDisplay();}if(typeof OS!=='undefined')OS.notify('💀','LOAN DEFAULT','NormBank seized all assets!');render();};
       const onBE=(d)=>{if(typeof OS!=='undefined')OS.notify('🏦','Bank Error',d.message||'Error');};
       Network.on('bank:update',onBU);Network.on('bank:interest',onInt);
@@ -189,10 +211,6 @@ const LoansApp = {
       wrap._cleanup=()=>{Network.off('bank:update',onBU);Network.off('bank:interest',onInt);Network.off('bank:loan:approved',onLA);Network.off('bank:loan:repaid',onLR);Network.off('bank:loan:defaulted',onLD);Network.off('bank:error',onBE);if(loanTimer)clearInterval(loanTimer);};
     }
 
-    // Note: balPoll removed — bankState.balance is set exclusively from server messages (bank:update, bank:loan:approved etc.)
-    // Economy.state.balance is kept in sync by those same handlers. Never poll Economy → bankState.
-
-    // Seed balance from Economy on open while we wait for bank:get response from server
     if(typeof Economy!=='undefined') bankState.balance = Economy.state.balance;
 
     if(!document.getElementById('bank-styles')){
