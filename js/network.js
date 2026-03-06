@@ -176,6 +176,28 @@ const Network = (() => {
         if(typeof OS!=='undefined') OS.notify('📋',`Clipboard from ${msg.from}`,msg.text.slice(0,60));
         break;
       case 'pong': emit('pong',msg); break;
+
+      // ── Multi-Bank ────────────────────────────────────────────────
+      case 'multibank:data':    emit('multibank:data',msg); break;
+      case 'multibank:update':  emit('multibank:update',msg); break;
+      case 'multibank:interest':
+        if(typeof Economy!=='undefined'){ Economy.state.balance+=msg.amount; Economy.save(); Economy.updateWalletDisplay(); }
+        emit('multibank:interest',msg);
+        if(typeof OS!=='undefined') OS.notify(msg.bankId==='noot'?'🐧':msg.bankId==='elite'?'💎':'🏦','Bank Interest',`+$${msg.amount.toFixed(2)} from ${msg.bankName}`);
+        break;
+      case 'multibank:hack:result': emit('multibank:hack:result',msg); break;
+      case 'multibank:hacked':
+        emit('multibank:hacked',msg);
+        if(typeof OS!=='undefined') OS.notify('💀','HACKED!',`${msg.by} stole $${(msg.lost||0).toFixed(2)} from your ${msg.bankName} deposit!`);
+        break;
+      case 'multibank:error':   emit('multibank:error',msg); break;
+
+      // ── Player Companies ──────────────────────────────────────────
+      case 'companies:data':        emit('companies:data',msg); break;
+      case 'companies:update':      emit('companies:update',msg); break;
+      case 'companies:created':     emit('companies:created',msg); break;
+      case 'companies:error':       emit('companies:error',msg); break;
+      case 'market:shareholders':   emit('market:shareholders',msg); break;
     }
   };
 
