@@ -1,6 +1,7 @@
 /**
- * NormOS — js/network.js v4.0
- * Handles: auth, chat, DMs, leaderboard, shared market, money transfers, virus
+ * NormOS — js/network.js v5.0
+ * Fixes: hack cooldowns (prevent multi-click), defensive input when multi-hacks,
+ *        virus cost deducted server-side, send money fixed, anti-exploit balance sync
  */
 
 const Network = (() => {
@@ -11,7 +12,7 @@ const Network = (() => {
 
   const state = {
     myId: null, myColor: '#4f9eff', username: null,
-    authenticated: false,
+    authenticated: false, isAdmin: false,
     online: [], leaderboard: [], channels: [],
     marketPrices: {}, marketHistory: {},
     bankBalance: 0, bankDeposit: 0, bankCreditScore: 0,
@@ -50,7 +51,6 @@ const Network = (() => {
 
   const syncEconomy=()=>{
     // No-op: server is the source of truth for balances.
-    // We never push Economy.state.balance to the server — that's an exploit vector.
   };
 
   const handleMessage=(msg)=>{
@@ -61,13 +61,13 @@ const Network = (() => {
 
       case 'auth:ok':
         state.myId=msg.id; state.myColor=msg.color; state.username=msg.username;
-        state.authenticated=true;
+        state.authenticated=true; state.isAdmin=msg.isAdmin||false;
         state.online=msg.online||[]; state.channels=msg.channels||[];
         state.leaderboard=msg.leaderboard||[];
         state.bankBalance=msg.balance||0; state.bankDeposit=msg.deposit||0;
         state.bankCreditScore=msg.creditScore||0;
         if(msg.market){state.marketPrices=msg.market.prices||{};state.marketHistory=msg.market.history||{};}
-        // Sync Economy
+        // Sync Economy from server
         if(typeof Economy!=='undefined'){ Economy.state.balance=msg.balance||0; Economy.save(); Economy.updateWalletDisplay(); }
         emit('auth:ok',msg); emit('welcome',msg);
         emit('online:update',state.online);
@@ -100,7 +100,6 @@ const Network = (() => {
       case 'market:tick':
         state.marketPrices=msg.prices||state.marketPrices;
         state.marketHistory=msg.history||state.marketHistory;
-        // Mirror live prices into Economy
         if(typeof Economy!=='undefined'){
           Object.assign(Economy.state.prices,state.marketPrices);
           Object.keys(state.marketHistory).forEach(k=>{
@@ -145,9 +144,16 @@ const Network = (() => {
         emit('bank:loan:defaulted',msg); break;
       case 'bank:error': emit('bank:error',msg); break;
 
-      case 'virus:incoming': emit('virus:incoming',msg); handleVirusAttack(msg); break;
-      case 'virus:sent': emit('virus:sent',msg); break;
+      // Virus — cost already deducted server-side, update balance from server response
+      case 'virus:sent':
+        // Server confirmed: deduct cost from local economy state
+        if(msg.newBalance!==undefined&&typeof Economy!=='undefined'){
+          Economy.state.balance=msg.newBalance; Economy.save(); Economy.updateWalletDisplay();
+        }
+        emit('virus:sent',msg); break;
       case 'virus:fail': emit('virus:fail',msg); break;
+
+      case 'virus:incoming': emit('virus:incoming',msg); handleVirusAttack(msg); break;
       case 'virus:loot':
         if(typeof Economy!=='undefined'){ Economy.state.balance+=msg.amount; Economy.save(); Economy.updateWalletDisplay(); }
         emit('virus:loot',msg);
@@ -158,12 +164,12 @@ const Network = (() => {
         if(typeof Economy!=='undefined'){ Economy.state.balance=msg.balance; Economy.save(); Economy.updateWalletDisplay(); }
         break;
 
-      case 'dm:receive':
-        emit('dm:receive',msg);
-        if(typeof OS!=='undefined') OS.notify('💬',`DM from ${msg.from}`,(msg.text||'').slice(0,60));
-        break;
-      case 'dm:sent':    emit('dm:sent',msg); break;
-      case 'dm:history': emit('dm:history',msg); break;
+      case 'desktop:data': emit('desktop:data',msg); break;
+
+      // Admin responses
+      case 'admin:ok':    emit('admin:ok',msg); break;
+      case 'admin:error': emit('admin:error',msg); break;
+      case 'admin:users': emit('admin:users',msg); break;
 
       case 'clipboard:incoming':
         emit('clipboard:incoming',msg);
@@ -174,8 +180,12 @@ const Network = (() => {
   };
 
   // ── Hacking minigame + virus attack ─────────────────────────────────────────
+  // Track active hack overlays to allow defensive input even when multiple attacks happen
+  let _activeHackCount = 0;
+  let _hackOverlays = [];
+
   const handleVirusAttack = (msg) => {
-    const {virusType,from,fromId}=msg;
+    const {virusType,from,fromId} = msg;
 
     // Check firewall protection
     try {
@@ -195,15 +205,18 @@ const Network = (() => {
     };
     const effect=EFFECTS[virusType]||EFFECTS.generic;
 
-    // Show hacking minigame — solve it to reduce damage
+    // Show hacking minigame — can handle multiple simultaneous attacks
     showHackingMinigame(from, fromId, virusType, effect);
   };
 
   const showHackingMinigame = (from, fromId, virusType, effect) => {
-    const overlay=document.createElement('div');
-    overlay.style.cssText=`position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:999999;display:flex;align-items:center;justify-content:center;`;
+    _activeHackCount++;
 
-    // Generate random sequence puzzle
+    const overlay=document.createElement('div');
+    // Stack multiple overlays using z-index offset
+    const zBase = 999999 + (_activeHackCount * 10);
+    overlay.style.cssText=`position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.85);z-index:${zBase};display:flex;align-items:center;justify-content:center;`;
+
     const SEQ_LEN=6;
     const CHARS='ABCDEF0123456789';
     const target=Array.from({length:SEQ_LEN},()=>CHARS[Math.floor(Math.random()*CHARS.length)]).join('');
@@ -212,28 +225,34 @@ const Network = (() => {
     const TIME_LIMIT=15000;
     let timeLeft=TIME_LIMIT;
 
+    const hackId = 'hack-'+Math.random().toString(36).slice(2,8);
+
     overlay.innerHTML=`
-      <div style="background:#0a0a0a;border:2px solid #f87171;border-radius:10px;padding:28px;text-align:center;max-width:420px;width:90%;">
+      <div style="background:#0a0a0a;border:2px solid #f87171;border-radius:10px;padding:28px;text-align:center;max-width:420px;width:90%;position:relative;">
         <div style="font-size:1.8rem;margin-bottom:6px;">☣️</div>
         <div style="color:#f87171;font-size:1rem;font-weight:bold;margin-bottom:4px;">HACK INCOMING: ${virusType.toUpperCase()}</div>
         <div style="color:#9ca3af;font-size:0.75rem;margin-bottom:14px;">Attack by <strong style="color:#f87171">${from}</strong></div>
         <div style="color:#4ade80;font-size:0.78rem;margin-bottom:6px;">Type the sequence to block the attack:</div>
-        <div style="font-size:1.6rem;letter-spacing:0.3em;color:#4f9eff;font-family:monospace;background:#111;padding:10px 16px;border-radius:6px;margin-bottom:12px;" id="hack-target">${target}</div>
-        <div style="font-size:1.4rem;letter-spacing:0.3em;color:#4ade80;font-family:monospace;background:#111;padding:8px 16px;border-radius:6px;margin-bottom:12px;min-height:44px;" id="hack-input">_</div>
+        <div style="font-size:1.6rem;letter-spacing:0.3em;color:#4f9eff;font-family:monospace;background:#111;padding:10px 16px;border-radius:6px;margin-bottom:12px;" id="${hackId}-target">${target}</div>
+        <div style="font-size:1.4rem;letter-spacing:0.3em;color:#4ade80;font-family:monospace;background:#111;padding:8px 16px;border-radius:6px;margin-bottom:12px;min-height:44px;" id="${hackId}-input">_</div>
         <div style="font-size:0.72rem;color:#6b7280;margin-bottom:10px;">Type using keyboard — case-insensitive</div>
         <div style="background:#1a1a1a;border-radius:4px;height:6px;overflow:hidden;margin-bottom:10px;">
-          <div id="hack-timer-bar" style="height:100%;background:#4ade80;width:100%;transition:width 0.1s linear;border-radius:4px;"></div>
+          <div id="${hackId}-timer-bar" style="height:100%;background:#4ade80;width:100%;transition:width 0.1s linear;border-radius:4px;"></div>
         </div>
-        <div style="color:#9ca3af;font-size:0.7rem;" id="hack-status">Block the attack or lose ${(effect.drain*100).toFixed(0)}% of your balance</div>
+        <div style="color:#9ca3af;font-size:0.7rem;" id="${hackId}-status">Block the attack or lose ${(effect.drain*100).toFixed(0)}% of your balance</div>
       </div>
     `;
     document.body.appendChild(overlay);
+    _hackOverlays.push(overlay);
+
+    // Focus overlay so keyboard events register even with multiple overlays
+    overlay.setAttribute('tabindex','0');
     overlay.focus();
 
     const timerInterval=setInterval(()=>{
       if(gameOver){clearInterval(timerInterval);return;}
       timeLeft-=100;
-      const bar=document.getElementById('hack-timer-bar');
+      const bar=overlay.querySelector(`#${hackId}-timer-bar`);
       if(bar) bar.style.width=(timeLeft/TIME_LIMIT*100)+'%';
       if(timeLeft<=5000&&bar) bar.style.background='#f87171';
       if(timeLeft<=0){
@@ -243,18 +262,24 @@ const Network = (() => {
     },100);
 
     const updateDisplay=()=>{
-      const el=document.getElementById('hack-input');
+      const el=overlay.querySelector(`#${hackId}-input`);
       if(el) el.textContent=(input||'_').padEnd(SEQ_LEN,'_').slice(0,SEQ_LEN);
     };
 
+    const cleanup = () => {
+      _activeHackCount = Math.max(0, _activeHackCount - 1);
+      _hackOverlays = _hackOverlays.filter(o => o !== overlay);
+      document.removeEventListener('keydown', onKey);
+      clearInterval(timerInterval);
+    };
+
     const resolveWin=()=>{
-      gameOver=true; clearInterval(timerInterval);
-      const el=document.getElementById('hack-status');
+      if(gameOver) return;
+      gameOver=true; cleanup();
+      const el=overlay.querySelector(`#${hackId}-status`);
       if(el){el.textContent='✅ BLOCKED! Attack neutralized.';el.style.color='#4ade80';}
-      // Reduced damage (10% of normal)
       setTimeout(()=>{
         overlay.remove();
-        // glitch effect
         const desktop=document.getElementById('desktop');
         if(effect.glitch&&desktop){
           let g=0; const gi=setInterval(()=>{
@@ -262,8 +287,8 @@ const Network = (() => {
             if(++g>5){clearInterval(gi);desktop.style.filter='';}
           },100);
         }
-        if(typeof Economy!=='undefined'&&typeof send==='function'){
-          const stolen=Economy.state.balance*effect.drain*0.1; // 10% damage on success
+        if(typeof Economy!=='undefined'){
+          const stolen=Economy.state.balance*effect.drain*0.1;
           if(stolen>0) send({type:'virus:damage',fromId,fromUsername:from,stolen});
           if(typeof OS!=='undefined') OS.notify('🛡️','Hack Blocked',`Partial damage: -$${stolen.toFixed(2)}`);
         }
@@ -271,12 +296,12 @@ const Network = (() => {
     };
 
     const resolveMiss=()=>{
-      gameOver=true; clearInterval(timerInterval);
-      const el=document.getElementById('hack-status');
+      if(gameOver) return;
+      gameOver=true; cleanup();
+      const el=overlay.querySelector(`#${hackId}-status`);
       if(el){el.textContent='❌ FAILED! Taking full damage...';el.style.color='#f87171';}
       setTimeout(()=>{
         overlay.remove();
-        // Full glitch
         const desktop=document.getElementById('desktop');
         if(effect.glitch&&desktop){
           let g=0; const gi=setInterval(()=>{
@@ -293,21 +318,42 @@ const Network = (() => {
       },1500);
     };
 
+    // Key handler: uses document-level but only acts when this overlay is topmost
     const onKey=(e)=>{
       if(gameOver) return;
+      // Only respond if this is the topmost overlay
+      if(_hackOverlays.length > 0 && _hackOverlays[_hackOverlays.length-1] !== overlay) return;
+
       const k=e.key.toUpperCase();
-      if(k==='ESCAPE'){resolveMiss();document.removeEventListener('keydown',onKey);return;}
+      if(k==='ESCAPE'){resolveMiss();return;}
       if(CHARS.includes(k)&&input.length<SEQ_LEN){
         input+=k; updateDisplay();
         if(input.length===SEQ_LEN){
           if(input===target) resolveWin();
-          else{ input=''; updateDisplay(); }
-          document.removeEventListener('keydown',onKey);
+          else { input=''; updateDisplay(); }
         }
       }
     };
     document.addEventListener('keydown',onKey);
-    setTimeout(()=>{ if(!gameOver){ resolveMiss(); document.removeEventListener('keydown',onKey); }},TIME_LIMIT+500);
+    setTimeout(()=>{ if(!gameOver){ resolveMiss(); }},TIME_LIMIT+500);
+  };
+
+  // ── Virus send with client-side cooldown tracking (server also enforces) ─────
+  const _hackCooldowns = {}; // local cooldown cache to prevent UI abuse
+
+  const sendVirusWithCooldown = (to, virusType) => {
+    const ck = `${virusType}:${to}`;
+    const last = _hackCooldowns[ck] || 0;
+    const now = Date.now();
+
+    if (now - last < 60000) {
+      const rem = Math.ceil((60000 - (now - last)) / 1000);
+      if (typeof OS !== 'undefined') OS.notify('☣️', 'Hack', `Cooldown: ${rem}s remaining.`);
+      return false;
+    }
+
+    _hackCooldowns[ck] = now;
+    return send({type:'virus:send', to, virusType});
   };
 
   // ── Taskbar indicator ────────────────────────────────────────────────────────
@@ -330,21 +376,26 @@ const Network = (() => {
 
   // ── Public API ────────────────────────────────────────────────────────────────
   const login       = (u,p)  => send({type:'auth:login',  username:u,password:p});
-  const signup      = (u,p)  => send({type:'auth:signup', username:u,password:p});
+  const signup      = (u,p,opts)  => send({type:'auth:signup', username:u,password:p,...(opts||{})});
   const setUsername = (n)    => { state.username=n; };
   const sendChat    = (ch,t) => send({type:'chat:message',channel:ch,text:t});
   const joinChannel = (ch)   => send({type:'chat:join',channel:ch});
   const shareClipboard=(t)   => send({type:'clipboard:share',text:t});
-  const sendDm      = (to,t,file) => send({type:'dm:send',to,text:t,file:file||null});
-  const getDmHistory= (id)   => send({type:'dm:history',withId:id});
+  // sendDm removed from public API per requirements (DMs removed from leaderboard)
   const transferMoney=(to,a) => send({type:'money:transfer',to,amount:a});
-  const sendVirus   = (to,t) => send({type:'virus:send',to,virusType:t});
+  const sendVirus   = (to,t) => sendVirusWithCooldown(to,t);
   const buyStock    = (id,sh)=> send({type:'market:buy',stockId:id,shares:sh});
   const sellStock   = (id,sh)=> send({type:'market:sell',stockId:id,shares:sh});
   const ping        = ()     => send({type:'ping'});
   const isConnected = ()     => connected;
   const isAuthenticated=()   => state.authenticated;
   const getState    = ()     => ({...state});
+
+  // Admin helpers
+  const adminKick          = (username) => send({type:'admin:kick',username});
+  const adminSetBalance    = (username,balance) => send({type:'admin:setbalance',username,balance});
+  const adminGetUsers      = () => send({type:'admin:getusers'});
+  const adminDeleteAccount = (username) => send({type:'admin:deleteaccount',username});
 
   const tryConnect=()=>{
     if(typeof EventBus!=='undefined') EventBus.on('os:ready',connect);
@@ -357,7 +408,8 @@ const Network = (() => {
   return {
     on,off,send,connect,
     login,signup,setUsername,sendChat,joinChannel,shareClipboard,
-    sendDm,getDmHistory,transferMoney,sendVirus,
+    transferMoney,sendVirus,
     buyStock,sellStock,ping,isConnected,isAuthenticated,getState,syncEconomy,
+    adminKick,adminSetBalance,adminGetUsers,adminDeleteAccount,
   };
 })();
