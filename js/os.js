@@ -54,6 +54,11 @@ const OS = (() => {
     hub:         { title:'NormHub',         icon:'🏪',  width:880,  height:560, create:()=>AppStoreApp.create()    },
     appstore:    { title:'NormHub',         icon:'🏪',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
     shop:        { title:'NormHub',         icon:'🏪',  width:880,  height:560, create:()=>AppStoreApp.create(),    hidden:true },
+    // ── v5.0 apps ─────────────────────────────────────────────────────────
+    banking:     { title:'NormBanks',       icon:'🏛️',  width:900,  height:580, create:()=>BankingApp.create()     },
+    banks:       { title:'NormBanks',       icon:'🏛️',  width:900,  height:580, create:()=>BankingApp.create(),    hidden:true },
+    companies:   { title:'NormCorp Exchange',icon:'🏢', width:920,  height:580, create:()=>CompaniesApp.create()   },
+    exchange:    { title:'NormCorp Exchange',icon:'🏢', width:920,  height:580, create:()=>CompaniesApp.create(),   hidden:true },
   };
 
   const BOOT_MSGS = [
