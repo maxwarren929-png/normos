@@ -656,7 +656,7 @@ wss.on('connection', (ws) => {
         STOCKS.push({ id:ticker, name:compName, sector:'Player', basePrice:ipoPrice, vol:0.06, icon });
         stockPrices[ticker] = ipoPrice; priceHistory[ticker] = [ipoPrice]; tradeVolume[ticker] = 0;
         await Promise.all([saveCompany(comp), saveCompanyShares(ticker, ukey, totalShares), saveAccount(acc, ukey)]);
-        sendTo(ws, { type:'companies:created', company:comp, newBalance:acc.balance });
+        sendTo(ws, { type:'companies:created', company:comp, newBalance:acc.balance, portfolio:acc.portfolio });
         const ipoMsg = { id:++msgCounter, username:'daemon.norm', color:'#4f9eff', text:`🚀 IPO: ${acc.username} listed ${compName} (${ticker}) at $${ipoPrice}/share!`, ts:ts() };
         channels.get('#general').push(ipoMsg);
         broadcast({ type:'chat:message', channel:'#general', message:ipoMsg });
