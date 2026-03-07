@@ -29,6 +29,7 @@ const OS = (() => {
     files:       { title:'File Explorer',   icon:'📁',  width:760,  height:500, create:()=>FileExplorerApp.create()},
     browser:     { title:'NormBrowser',     icon:'🌐',  width:900,  height:580, create:()=>BrowserApp.create()     },
     sysmon:      { title:'System Monitor',  icon:'📊',  width:640,  height:500, create:()=>SysmonApp.create()      },
+    settings:    { title:'Settings',        icon:'⚙️',  width:680,  height:500, create:()=>SettingsApp.create()    },
     snake:       { title:'Snake',           icon:'🐍',  width:380,  height:420, minWidth:380, minHeight:420, resizable:false, create:()=>SnakeApp.create() },
     chat:        { title:'NormChat',        icon:'💬',  width:800,  height:520, create:()=>ChatApp.create()        },
     messaging:   { title:'Messaging',       icon:'💬',  width:800,  height:520, create:()=>ChatApp.create()        },
@@ -36,14 +37,13 @@ const OS = (() => {
     normsheet:   { title:'NormSheet',       icon:'📊',  width:860,  height:540, create:()=>NormSheetApp.create()   },
     calculator:  { title:'Calculator',      icon:'🔢',  width:320,  height:460, minWidth:320, minHeight:460, resizable:false, create:()=>CalculatorApp.create() },
     clock:       { title:'Clock',           icon:'🕐',  width:400,  height:420, create:()=>ClockApp.create()       },
-    music:       { title:'NormTunes',       icon:'🎵',  width:340,  height:560, create:()=>MusicApp.create()       },
     calendar:    { title:'Calendar',        icon:'📅',  width:880,  height:560, create:()=>CalendarApp.create()    },
     imagedrop:   { title:'Image Viewer',    icon:'🖼',  width:760,  height:540, create:()=>ImageDropApp.create()   },
     texteditor:  { title:'NormEdit',        icon:'✏️',  width:800,  height:560, create:(o)=>TextEditorApp.create(o?.filePath,o?.content) },
     stocks:      { title:'NormStock',       icon:'📈',  width:940,  height:580, create:()=>StocksApp.create()      },
     leaderboard: { title:'Leaderboard',     icon:'🏆',  width:900,  height:560, create:()=>LeaderboardApp.create() },
     // ── v4.0 apps ─────────────────────────────────────────────────────────
-    normtok:     { title:'NormTok',         icon:'📱',  width:860,  height:560, create:()=>NormTokApp.create()     },
+    normarket:   { title:'NorMarket',       icon:'🏪',  width:960,  height:600, create:()=>NorMarketApp.create()   },
     social:      { title:'Social',          icon:'👥',  width:720,  height:560, create:()=>SocialApp.create()      },
     bank:        { title:'NormBank',        icon:'🏦',  width:680,  height:580, create:()=>LoansApp.create()       },
     loans:       { title:'NormBank',        icon:'🏦',  width:680,  height:580, create:()=>LoansApp.create(),       hidden:true },
@@ -84,7 +84,8 @@ const OS = (() => {
     { cls:'ok',   text:'Leaderboard: tracking all accounts' },
     { cls:'ok',   text:'Hacking system: minigame engine loaded' },
     { cls:'ok',   text:'Hacking: 60s cooldown system active' },
-    { cls:'ok',   text:'NormTok: social feed initialized' },
+    { cls:'ok',   text:'NorMarket: player marketplace initialized' },
+    { cls:'ok',   text:'NorMarket: listings, paywalls, bounties ready' },
     { cls:'ok',   text:'NormMiner: payout feedback enabled' },
     { cls:'ok',   text:'Social: Profile + Friends + Messaging merged' },
     { cls:'ok',   text:'NormCasino: RNG seeded (house advantage: confirmed)' },
@@ -375,7 +376,8 @@ const OS = (() => {
         { icon:'🏆', label:'Leaderboard',       action: ()=>apps.open('leaderboard') },
         { icon:'🏦', label:'NormBank',           action: ()=>apps.open('bank') },
         { sep:true },
-        { icon:'📱', label:'NormTok',           action: ()=>apps.open('normtok') },
+        { icon:'📱', label:'NorMarket',         action: ()=>apps.open('normarket') },
+        { icon:'🐍', label:'Snake',              action: ()=>apps.open('snake') },
         { icon:'👥', label:'Social',            action: ()=>apps.open('social') },
         { icon:'⛏️', label:'NormMiner',         action: ()=>apps.open('miner') },
         { icon:'🎰', label:'NormCasino',        action: ()=>apps.open('casino') },
@@ -420,9 +422,9 @@ const OS = (() => {
     if (!state.desktopApps) state.desktopApps = [
       'terminal','files','browser','texteditor',
       'sysmon','snake','chat','paint',
-      'normsheet','calculator','clock','music','calendar',
+      'normsheet','calculator','clock','calendar',
       'imagedrop','stocks','leaderboard',
-      'normtok','social','bank','miner',
+      'normarket','social','bank','miner',
       'casino','settings','hub',
     ];
     const iconApps = state.desktopApps;
@@ -530,9 +532,9 @@ const OS = (() => {
   const DEFAULT_DESKTOP_APPS = [
     'terminal','files','browser','texteditor',
     'sysmon','snake','chat','paint',
-    'normsheet','calculator','clock','music','calendar',
+    'normsheet','calculator','clock','calendar',
     'imagedrop','stocks','leaderboard',
-    'normtok','social','bank','miner',
+    'normarket','social','bank','miner',
     'casino','settings','hub',
   ];
 
