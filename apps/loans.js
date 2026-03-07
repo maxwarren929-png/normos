@@ -343,11 +343,17 @@ const LoansApp = {
 
       main.querySelectorAll('.ml-qbtn.dep').forEach(btn => btn.addEventListener('click', () => {
         const inp = main.querySelector(`#ml-dep-${iid}`);
-        if (inp) inp.value = btn.dataset.val === 'all' ? Math.floor(bankState.balance) : btn.dataset.val;
+        if (inp) {
+          const liveBal = (typeof Economy !== 'undefined') ? Economy.state.balance : bankState.balance;
+          inp.value = btn.dataset.val === 'all' ? Math.floor(liveBal) : btn.dataset.val;
+        }
       }));
       main.querySelectorAll('.ml-qbtn.wdw').forEach(btn => btn.addEventListener('click', () => {
         const inp = main.querySelector(`#ml-wdw-${iid}`);
-        if (inp) inp.value = btn.dataset.val === 'all' ? Math.floor(bd.myDeposit || 0) : btn.dataset.val;
+        if (inp) {
+          const liveDep = (multiBankData[activeBank] || {}).myDeposit || 0;
+          inp.value = btn.dataset.val === 'all' ? Math.floor(liveDep) : btn.dataset.val;
+        }
       }));
 
       main.querySelector(`#ml-dep-btn-${iid}`)?.addEventListener('click', () => {
@@ -355,21 +361,25 @@ const LoansApp = {
         const msgEl = main.querySelector(`#ml-msg-${iid}`);
         // Always read live balance — bankState.balance may lag behind Economy
         const liveBal = (typeof Economy !== 'undefined') ? Economy.state.balance : bankState.balance;
-        if (amt <= 0 || amt > liveBal) { setMsg(msgEl, amt <= 0 ? 'Invalid amount' : 'Insufficient cash', '#f87171'); return; }
+        if (amt <= 0) { setMsg(msgEl, 'Invalid amount', '#f87171'); return; }
+        if (amt > liveBal) { setMsg(msgEl, `Insufficient cash ($${fmt(liveBal)} available)`, '#f87171'); return; }
         if (typeof Network !== 'undefined' && Network.isConnected()) {
           Network.send({ type:'multibank:deposit', bankId:b.id, amount:amt });
           setMsg(msgEl, 'Depositing...', 'var(--text3)');
-        } else setMsg(msgEl, 'Not connected', '#f87171');
+        } else setMsg(msgEl, 'Not connected to server', '#f87171');
       });
 
       main.querySelector(`#ml-wdw-btn-${iid}`)?.addEventListener('click', () => {
         const amt   = parseFloat(main.querySelector(`#ml-wdw-${iid}`)?.value) || 0;
         const msgEl = main.querySelector(`#ml-msg-${iid}`);
-        if (amt <= 0 || amt > (bd.myDeposit || 0)) { setMsg(msgEl, `Only $${fmt(bd.myDeposit || 0)} deposited`, '#f87171'); return; }
+        // Re-read live deposit amount (bd captured at render time may be stale)
+        const liveDep = (multiBankData[activeBank] || {}).myDeposit || 0;
+        if (amt <= 0) { setMsg(msgEl, 'Invalid amount', '#f87171'); return; }
+        if (amt > liveDep) { setMsg(msgEl, `Only $${fmt(liveDep)} deposited`, '#f87171'); return; }
         if (typeof Network !== 'undefined' && Network.isConnected()) {
           Network.send({ type:'multibank:withdraw', bankId:b.id, amount:amt });
           setMsg(msgEl, 'Withdrawing...', 'var(--text3)');
-        } else setMsg(msgEl, 'Not connected', '#f87171');
+        } else setMsg(msgEl, 'Not connected to server', '#f87171');
       });
 
       main.querySelector(`#ml-hack-btn-${iid}`)?.addEventListener('click', () => {
@@ -488,6 +498,12 @@ const LoansApp = {
         if (msg.success) Network.send({ type:'multibank:get' });
       };
       const onMbHacked = (msg) => { if(!wrap.isConnected)return; if(typeof OS!=='undefined')OS.notify('💀','HACKED!',`${msg.by} stole $${(msg.lost||0).toFixed(2)} from ${msg.bankName}!`); };
+      const onMbErr = (msg) => {
+        if (!wrap.isConnected) return;
+        const msgEl = wrap.querySelector(`#ml-msg-${iid}`);
+        if (msgEl) { msgEl.textContent = msg.message || 'Error'; msgEl.style.color = '#f87171'; }
+        else showToast(msg.message || 'Bank error', '#f87171');
+      };
 
       Network.on('bank:update',           onBU);
       Network.on('bank:loan:approved',    onLA);
@@ -499,6 +515,7 @@ const LoansApp = {
       Network.on('multibank:interest',    onMbI);
       Network.on('multibank:hack:result', onMbH);
       Network.on('multibank:hacked',      onMbHacked);
+      Network.on('multibank:error',         onMbErr);
 
       Network.send({ type:'bank:get' });
       Network.send({ type:'multibank:get' });
@@ -514,6 +531,7 @@ const LoansApp = {
         Network.off('multibank:interest',    onMbI);
         Network.off('multibank:hack:result', onMbH);
         Network.off('multibank:hacked',      onMbHacked);
+        Network.off('multibank:error',         onMbErr);
         if (loanTimer) clearInterval(loanTimer);
       };
     }
