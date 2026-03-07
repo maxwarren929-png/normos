@@ -357,7 +357,8 @@ const LoansApp = {
       }));
 
       main.querySelector(`#ml-dep-btn-${iid}`)?.addEventListener('click', () => {
-        const amt   = parseFloat(main.querySelector(`#ml-dep-${iid}`)?.value) || 0;
+        const depInp = main.querySelector(`#ml-dep-${iid}`);
+        const amt   = parseFloat(depInp?.value) || 0;
         const msgEl = main.querySelector(`#ml-msg-${iid}`);
         // Always read live balance — bankState.balance may lag behind Economy
         const liveBal = (typeof Economy !== 'undefined') ? Economy.state.balance : bankState.balance;
@@ -366,11 +367,13 @@ const LoansApp = {
         if (typeof Network !== 'undefined' && Network.isConnected()) {
           Network.send({ type:'multibank:deposit', bankId:b.id, amount:amt });
           setMsg(msgEl, 'Depositing...', 'var(--text3)');
+          if (depInp) depInp.value = '';
         } else setMsg(msgEl, 'Not connected to server', '#f87171');
       });
 
       main.querySelector(`#ml-wdw-btn-${iid}`)?.addEventListener('click', () => {
-        const amt   = parseFloat(main.querySelector(`#ml-wdw-${iid}`)?.value) || 0;
+        const wdwInp = main.querySelector(`#ml-wdw-${iid}`);
+        const amt   = parseFloat(wdwInp?.value) || 0;
         const msgEl = main.querySelector(`#ml-msg-${iid}`);
         // Re-read live deposit amount (bd captured at render time may be stale)
         const liveDep = (multiBankData[activeBank] || {}).myDeposit || 0;
@@ -379,6 +382,7 @@ const LoansApp = {
         if (typeof Network !== 'undefined' && Network.isConnected()) {
           Network.send({ type:'multibank:withdraw', bankId:b.id, amount:amt });
           setMsg(msgEl, 'Withdrawing...', 'var(--text3)');
+          if (wdwInp) wdwInp.value = '';
         } else setMsg(msgEl, 'Not connected to server', '#f87171');
       });
 
@@ -486,8 +490,17 @@ const LoansApp = {
       const onMbD = (msg) => { if(!wrap.isConnected)return; if(msg.banks)multiBankData={...multiBankData,...msg.banks}; rerender(); };
       const onMbU = (msg) => {
         if (!wrap.isConnected) return;
+        const prevData = multiBankData[activeBank] ? { ...multiBankData[activeBank] } : null;
         if (msg.banks) multiBankData = { ...multiBankData, ...msg.banks };
         if (msg.balance !== undefined) { bankState.balance = msg.balance; if(typeof Economy!=='undefined'){Economy.state.balance=msg.balance;Economy.save();Economy.updateWalletDisplay();} }
+        // Show success toast for deposit/withdraw
+        if (prevData && msg.banks && msg.banks[activeBank]) {
+          const newDep = msg.banks[activeBank].myDeposit || 0;
+          const diff = newDep - (prevData.myDeposit || 0);
+          const b2 = HACKABLE_BANKS[activeBank];
+          if (diff > 0) showToast(`${b2?.icon||'🏦'} Deposited $${fmt(diff)}`, b2?.color || '#4ade80');
+          else if (diff < 0) showToast(`${b2?.icon||'🏦'} Withdrew $${fmt(-diff)} (fee deducted)`, b2?.color || '#4ade80');
+        }
         rerender();
       };
       const onMbI = (msg) => { if(!wrap.isConnected)return; if(typeof OS!=='undefined')OS.notify(HACKABLE_BANKS[msg.bankId]?.icon||'🏦',msg.bankName,`+$${(msg.amount||0).toFixed(2)} interest!`); };
