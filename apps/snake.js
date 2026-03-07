@@ -155,8 +155,9 @@ const SnakeApp = {
     };
     document.addEventListener('keydown', onKey);
 
-    // Cleanup
-    EventBus.on('window:closed', () => {
+    // Cleanup — only clean up when the snake window itself is closed
+    EventBus.on('window:closed', ({ appId }) => {
+      if (appId !== 'snake') return;
       clearInterval(interval);
       document.removeEventListener('keydown', onKey);
     });
