@@ -132,7 +132,7 @@ const MusicApp = {
     };
 
     render();
-    EventBus.on('window:closed', () => stopPlay());
+    EventBus.on('window:closed', ({ appId }) => { if (appId === 'music') stopPlay(); });
     return wrap;
   }
 };
