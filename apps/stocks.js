@@ -42,6 +42,12 @@ const StocksApp = {
       Network.on('companies:created', (msg) => {
         if (!wrap.isConnected) return;
         myCompany = msg.company; companyCreateMode = false;
+        // Sync balance and portfolio from server after IPO capital deducted
+        if (msg.newBalance !== undefined && typeof Economy !== 'undefined') {
+          Economy.state.balance = msg.newBalance;
+          if (msg.portfolio) Economy.state.portfolio = msg.portfolio;
+          Economy.save(); Economy.updateWalletDisplay();
+        }
         activeTab = 'companies'; selectedId = msg.company.ticker;
         renderSidebar(); renderMain();
         if (typeof OS !== 'undefined') OS.notify('🚀', 'IPO', `${msg.company.name} (${msg.company.ticker}) is live!`);
@@ -49,7 +55,8 @@ const StocksApp = {
       Network.on('companies:error', (msg) => {
         if (!wrap.isConnected) return;
         const errEl = wrap.querySelector('#comp-err');
-        if (errEl) errEl.textContent = msg.message || 'Error';
+        if (errEl) { errEl.textContent = msg.message || 'Error'; }
+        else if (typeof OS !== 'undefined') OS.notify('❌', 'Company Error', msg.message || 'Error');
       });
       Network.on('market:shareholders', (msg) => {
         if (!wrap.isConnected) return;
@@ -368,7 +375,9 @@ const StocksApp = {
         if(capital<100){if(errEl)errEl.textContent='Min $100 capital';return;}
         if(capital>Economy.state.balance){if(errEl)errEl.textContent='Insufficient funds';return;}
         if(errEl)errEl.textContent='';
+        const submitBtn = mainEl.querySelector('#cc-submit');
         if(typeof Network!=='undefined'&&Network.isConnected()){
+          if(submitBtn){ submitBtn.disabled=true; submitBtn.textContent='🚀 Launching...'; }
           Network.send({type:'companies:create',name,ticker,icon:selIcon,totalShares:shares,initialCapital:capital});
         } else { if(errEl)errEl.textContent='Not connected to server'; }
       });
