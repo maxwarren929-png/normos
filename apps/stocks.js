@@ -436,19 +436,32 @@ const StocksApp = {
       qInp?.addEventListener('input',()=>{if(cqcost)cqcost.textContent=`Cost: $${Economy.fmt(price*(parseFloat(qInp.value)||0))}`;});
       mainEl.querySelector('#cq-buy')?.addEventListener('click',()=>{
         const q=Math.floor(parseFloat(qInp?.value)||0);
-        const res=Economy.buy(c.ticker,q);
+        if (q <= 0) return;
         const msgEl=mainEl.querySelector('#cq-msg');
-        if(msgEl){msgEl.textContent=res.msg;msgEl.style.color=res.ok?'var(--green)':'var(--red)';}
-        if(res.ok&&typeof Network!=='undefined')Network.buyStock(c.ticker,q);
-        if(res.ok)renderCompanyDetail(mainEl,c);
+        if(typeof Network!=='undefined'&&Network.isConnected()){
+          const cost=price*q;
+          if(cost>Economy.state.balance){if(msgEl){msgEl.textContent=`Insufficient funds. Need $${Economy.fmt(cost)}.`;msgEl.style.color='var(--red)';}return;}
+          if(msgEl){msgEl.textContent='Order sent...';msgEl.style.color='var(--text3)';}
+          Network.buyStock(c.ticker,q);
+        } else {
+          const res=Economy.buy(c.ticker,q);
+          if(msgEl){msgEl.textContent=res.msg;msgEl.style.color=res.ok?'var(--green)':'var(--red)';}
+          if(res.ok)renderCompanyDetail(mainEl,c);
+        }
       });
       mainEl.querySelector('#cq-sell')?.addEventListener('click',()=>{
         const q=Math.floor(parseFloat(qInp?.value)||0);
-        const res=Economy.sell(c.ticker,q);
+        if (q <= 0) return;
         const msgEl=mainEl.querySelector('#cq-msg');
-        if(msgEl){msgEl.textContent=res.msg;msgEl.style.color=res.ok?'var(--green)':'var(--red)';}
-        if(res.ok&&typeof Network!=='undefined')Network.sellStock(c.ticker,q);
-        if(res.ok)renderCompanyDetail(mainEl,c);
+        if(typeof Network!=='undefined'&&Network.isConnected()){
+          if(!pos||q>pos.shares){if(msgEl){msgEl.textContent=pos?`You only own ${pos.shares} shares.`:'You don\'t own this stock.';msgEl.style.color='var(--red)';}return;}
+          if(msgEl){msgEl.textContent='Order sent...';msgEl.style.color='var(--text3)';}
+          Network.sellStock(c.ticker,q);
+        } else {
+          const res=Economy.sell(c.ticker,q);
+          if(msgEl){msgEl.textContent=res.msg;msgEl.style.color=res.ok?'var(--green)':'var(--red)';}
+          if(res.ok)renderCompanyDetail(mainEl,c);
+        }
       });
     };
 
@@ -563,31 +576,56 @@ const StocksApp = {
       // Buy
       mainEl.querySelector(`#sd-buy-${id}`)?.addEventListener('click', () => {
         const q   = Math.floor(parseFloat(qtyInput?.value) || 0);
-        const res = Economy.buy(id, q);
+        if (q <= 0) return;
         const msgEl = mainEl.querySelector(`#sd-msg-${id}`);
-        if (msgEl) {
-          msgEl.textContent = res.msg;
-          msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)';
+        if (typeof Network !== 'undefined' && Network.isConnected()) {
+          // Server is source of truth — send trade request, wait for market:trade:ok
+          const cost = price * q;
+          if (cost > Economy.state.balance) {
+            if (msgEl) { msgEl.textContent = `Insufficient funds. Need $${Economy.fmt(cost)}, have $${Economy.fmt(Economy.state.balance)}.`; msgEl.style.color = 'var(--red)'; }
+            return;
+          }
+          if (msgEl) { msgEl.textContent = 'Order sent...'; msgEl.style.color = 'var(--text3)'; }
+          Network.buyStock(id, q);
+        } else {
+          // Offline fallback
+          const res = Economy.buy(id, q);
+          if (msgEl) { msgEl.textContent = res.msg; msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)'; }
+          if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
         }
-        if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
       });
 
       // Sell
       mainEl.querySelector(`#sd-sell-${id}`)?.addEventListener('click', () => {
         const q   = Math.floor(parseFloat(qtyInput?.value) || 0);
-        const res = Economy.sell(id, q);
+        if (q <= 0) return;
         const msgEl = mainEl.querySelector(`#sd-msg-${id}`);
-        if (msgEl) { msgEl.textContent = res.msg; msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)'; }
-        if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
+        if (typeof Network !== 'undefined' && Network.isConnected()) {
+          if (!pos || q > pos.shares) {
+            if (msgEl) { msgEl.textContent = pos ? `You only own ${pos.shares} shares.` : 'You don\'t own this stock.'; msgEl.style.color = 'var(--red)'; }
+            return;
+          }
+          if (msgEl) { msgEl.textContent = 'Order sent...'; msgEl.style.color = 'var(--text3)'; }
+          Network.sellStock(id, q);
+        } else {
+          const res = Economy.sell(id, q);
+          if (msgEl) { msgEl.textContent = res.msg; msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)'; }
+          if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
+        }
       });
 
       // Sell all
       mainEl.querySelector(`#sd-sellall-${id}`)?.addEventListener('click', () => {
         if (!pos) return;
-        const res = Economy.sell(id, pos.shares);
         const msgEl = mainEl.querySelector(`#sd-msg-${id}`);
-        if (msgEl) { msgEl.textContent = res.msg; msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)'; }
-        if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
+        if (typeof Network !== 'undefined' && Network.isConnected()) {
+          if (msgEl) { msgEl.textContent = 'Order sent...'; msgEl.style.color = 'var(--text3)'; }
+          Network.sellStock(id, pos.shares);
+        } else {
+          const res = Economy.sell(id, pos.shares);
+          if (msgEl) { msgEl.textContent = res.msg; msgEl.style.color = res.ok ? 'var(--green)' : 'var(--red)'; }
+          if (res.ok) { renderSidebar(); renderDetail(id); if (typeof OS !== 'undefined') OS.notify(s.icon, 'NormStock', res.msg, 3000); }
+        }
       });
 
       // Request shareholders from server
@@ -624,9 +662,35 @@ const StocksApp = {
 
     render();
 
+    // Re-render after server confirms a trade (buy/sell) so UI reflects new balance & portfolio
+    if (typeof Network !== 'undefined') {
+      const onTradeOk = (msg) => {
+        if (!wrap.isConnected) return;
+        renderSidebar();
+        if (selectedId === msg.stockId) renderDetail(msg.stockId);
+        if (typeof OS !== 'undefined') {
+          const st = Economy.getStock(msg.stockId);
+          const icon = st ? st.icon : '📈';
+          if (msg.action === 'BUY') OS.notify(icon, 'NormStock', `Bought ${msg.shares} share${msg.shares>1?'s':''} of ${msg.stockId} for $${Economy.fmt(msg.cost)}.`);
+          else OS.notify(icon, 'NormStock', `Sold ${msg.shares} share${msg.shares>1?'s':''} of ${msg.stockId} for $${Economy.fmt(msg.revenue)}.`);
+        }
+      };
+      const onTradeFail = (msg) => {
+        if (!wrap.isConnected) return;
+        const msgEl = wrap.querySelector(`#sd-msg-${selectedId}`);
+        if (msgEl) { msgEl.textContent = msg.reason || 'Trade failed'; msgEl.style.color = 'var(--red)'; }
+      };
+      Network.on('market:trade:ok',   onTradeOk);
+      Network.on('market:trade:fail', onTradeFail);
+      wrap._cleanup_stocks = () => {
+        Network.off('market:trade:ok',   onTradeOk);
+        Network.off('market:trade:fail', onTradeFail);
+      };
+    }
+
     // Clean up listener when window closes
-    EventBus.on('window:closed', () => { if (unsubscribe) { unsubscribe(); unsubscribe = null; } });
+    EventBus.on('window:closed', () => { if (unsubscribe) { unsubscribe(); unsubscribe = null; } if (wrap._cleanup_stocks) wrap._cleanup_stocks(); });
 
     return wrap;
   }
-};  
+};
