@@ -299,6 +299,8 @@ const LoansApp = {
     };
 
     const rerender = () => {
+      // Always sync balance from Economy so deposit/withdraw checks are accurate
+      if (typeof Economy !== 'undefined') bankState.balance = Economy.state.balance;
       const cashEl = wrap.querySelector(`#mbl-cash-${iid}`);
       if (cashEl) cashEl.textContent = '$' + fmt(bankState.balance);
       wrap.querySelectorAll('.mbl-nav-item').forEach(item => {
@@ -351,7 +353,9 @@ const LoansApp = {
       main.querySelector(`#ml-dep-btn-${iid}`)?.addEventListener('click', () => {
         const amt   = parseFloat(main.querySelector(`#ml-dep-${iid}`)?.value) || 0;
         const msgEl = main.querySelector(`#ml-msg-${iid}`);
-        if (amt <= 0 || amt > bankState.balance) { setMsg(msgEl, 'Insufficient cash', '#f87171'); return; }
+        // Always read live balance — bankState.balance may lag behind Economy
+        const liveBal = (typeof Economy !== 'undefined') ? Economy.state.balance : bankState.balance;
+        if (amt <= 0 || amt > liveBal) { setMsg(msgEl, amt <= 0 ? 'Invalid amount' : 'Insufficient cash', '#f87171'); return; }
         if (typeof Network !== 'undefined' && Network.isConnected()) {
           Network.send({ type:'multibank:deposit', bankId:b.id, amount:amt });
           setMsg(msgEl, 'Depositing...', 'var(--text3)');
@@ -460,6 +464,8 @@ const LoansApp = {
       ov.querySelector(`#hmc-${iid}`)?.addEventListener('click', () => finish(false));
     };
 
+    if (typeof Economy !== 'undefined') bankState.balance = Economy.state.balance;
+
     // ── Network wiring ───────────────────────────────────────────────────────
     if (typeof Network !== 'undefined') {
       const onBU  = (d) => { bankState = { ...bankState, ...d }; if (d.balance !== undefined && typeof Economy !== 'undefined') { Economy.state.balance = d.balance; Economy.save(); Economy.updateWalletDisplay(); } rerender(); };
@@ -511,8 +517,6 @@ const LoansApp = {
         if (loanTimer) clearInterval(loanTimer);
       };
     }
-
-    if (typeof Economy !== 'undefined') bankState.balance = Economy.state.balance;
 
     // ── Inject styles ────────────────────────────────────────────────────────
     if (!document.getElementById('mbl-styles')) {
