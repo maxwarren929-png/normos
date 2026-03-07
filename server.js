@@ -64,6 +64,20 @@ async function dbInit() {
       shares       BIGINT DEFAULT 0,
       PRIMARY KEY (ticker, username_key)
     );
+
+    CREATE TABLE IF NOT EXISTS market_listings (
+      id           TEXT    PRIMARY KEY,
+      seller_key   TEXT    NOT NULL,
+      title        TEXT    NOT NULL,
+      description  TEXT    DEFAULT '',
+      type         TEXT    DEFAULT 'text',
+      content      TEXT    DEFAULT '',
+      price        NUMERIC DEFAULT 0,
+      bounty       NUMERIC DEFAULT 0,
+      tags         TEXT    DEFAULT '',
+      buyers       JSONB   DEFAULT '[]',
+      created_at   TIMESTAMPTZ DEFAULT NOW()
+    );
   `);
   console.log('  ✅ PostgreSQL tables ready');
 }
@@ -73,6 +87,7 @@ const accounts        = new Map();
 const bankDeposits    = { noot:{}, elite:{}, comm:{} };
 const playerCompanies = {};
 const companyShares   = {};
+const marketListings  = new Map(); // id → listing
 
 async function loadAll() {
   const accs = await pool.query('SELECT * FROM accounts');
@@ -109,6 +124,18 @@ async function loadAll() {
     if (!companyShares[r.ticker]) companyShares[r.ticker] = {};
     companyShares[r.ticker][r.username_key] = parseInt(r.shares);
   }
+
+  const listings = await pool.query('SELECT * FROM market_listings ORDER BY created_at DESC');
+  for (const r of listings.rows) {
+    marketListings.set(r.id, {
+      id: r.id, sellerKey: r.seller_key, title: r.title,
+      description: r.description, type: r.type, content: r.content,
+      price: parseFloat(r.price), bounty: parseFloat(r.bounty),
+      tags: r.tags, buyers: r.buyers || [],
+      createdAt: r.created_at,
+    });
+  }
+  console.log(`  🏪 ${marketListings.size} market listings loaded`);
 
   console.log(`  👥 ${accounts.size} accounts loaded`);
   console.log(`  🏦 Bank deposits loaded`);
@@ -183,6 +210,22 @@ async function saveCompanyShares(ticker, ukey, shares) {
       `, [ticker, ukey, shares]);
     }
   } catch(e) { console.error('saveCompanyShares failed:', e.message); }
+}
+
+async function saveListing(l) {
+  try {
+    await pool.query(`
+      INSERT INTO market_listings (id,seller_key,title,description,type,content,price,bounty,tags,buyers)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      ON CONFLICT (id) DO UPDATE SET
+        title=EXCLUDED.title, description=EXCLUDED.description, content=EXCLUDED.content,
+        price=EXCLUDED.price, bounty=EXCLUDED.bounty, tags=EXCLUDED.tags, buyers=EXCLUDED.buyers
+    `, [l.id, l.sellerKey, l.title, l.description, l.type, l.content,
+        l.price, l.bounty, l.tags, JSON.stringify(l.buyers)]);
+  } catch(e) { console.error('saveListing failed:', e.message); }
+}
+async function deleteListing(id) {
+  try { await pool.query('DELETE FROM market_listings WHERE id=$1', [id]); } catch(e) {}
 }
 
 async function deleteAccountFromDB(ukey) {
@@ -284,12 +327,14 @@ const portfolioValue = (acc) =>
   Object.entries(acc.portfolio || {}).reduce((sum, [id, pos]) => sum + (stockPrices[id] || 0) * (pos.shares || 0), 0);
 
 const leaderboardData = () =>
-  [...accounts.values()].map(a => ({
-    id: a.id, username: a.username, color: a.color,
-    balance: a.balance,
-    netWorth: a.balance + portfolioValue(a),
-    creditScore: a.creditScore || 0,
-  })).sort((a, b) => b.netWorth - a.netWorth).slice(0, 50).map((u, i) => ({ ...u, rank: i + 1 }));
+  [...accounts.values()]
+    .filter(a => a && a.id && a.username && typeof a.balance === 'number')
+    .map(a => ({
+      id: a.id, username: a.username, color: a.color || '#6b7280',
+      balance: a.balance,
+      netWorth: a.balance + portfolioValue(a),
+      creditScore: a.creditScore || 0,
+    })).sort((a, b) => b.netWorth - a.netWorth).slice(0, 50).map((u, i) => ({ ...u, rank: i + 1 }));
 
 const broadcastLeaderboard = () => broadcast({ type:'leaderboard:rich', leaderboard: leaderboardData() });
 
@@ -748,6 +793,108 @@ wss.on('connection', (ws) => {
         accounts.delete(delKey);
         await deleteAccountFromDB(delKey);
         sendTo(ws, { type:'admin:ok', message:`Deleted "${delAcc.username}".` });
+        broadcastLeaderboard(); break;
+      }
+
+      // ── NORMARKET ─────────────────────────────────────────────────────────
+      case 'market:list:get': {
+        const listings = [...marketListings.values()].map(l => {
+          const seller = accounts.get(l.sellerKey);
+          const hasBought = l.buyers.includes(ukey);
+          return {
+            id: l.id, title: l.title, description: l.description,
+            type: l.type, price: l.price, bounty: l.bounty, tags: l.tags,
+            sellerName: seller?.username || l.sellerKey,
+            sellerColor: seller?.color || '#6b7280',
+            buyerCount: l.buyers.length,
+            isMine: l.sellerKey === ukey,
+            hasBought,
+            content: (l.price === 0 || hasBought || l.sellerKey === ukey) ? l.content : null,
+            createdAt: l.createdAt,
+          };
+        }).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        sendTo(ws, { type:'market:list:data', listings }); break;
+      }
+
+      case 'market:list:create': {
+        const title = (msg.title || '').trim().slice(0, 80);
+        const desc  = (msg.description || '').trim().slice(0, 500);
+        const type  = ['text','video','music','image'].includes(msg.contentType) ? msg.contentType : 'text';
+        const content = (msg.content || '').slice(0, 50000);
+        const price = Math.max(0, parseFloat(msg.price) || 0);
+        const bounty = Math.max(0, parseFloat(msg.bounty) || 0);
+        const tags  = (msg.tags || '').slice(0, 100);
+        if (title.length < 2) { sendTo(ws, { type:'market:error', message:'Title too short.' }); break; }
+        const lid = uid();
+        const listing = { id: lid, sellerKey: ukey, title, description: desc, type, content, price, bounty, tags, buyers: [], createdAt: new Date().toISOString() };
+        marketListings.set(lid, listing);
+        await saveListing(listing);
+        sendTo(ws, { type:'market:list:created', id: lid });
+        broadcast({ type:'market:list:new', listing: { id: lid, title, description: desc, type, price, bounty, tags, sellerName: acc.username, sellerColor: acc.color, buyerCount: 0, isMine: false, hasBought: false, content: price === 0 ? content : null, createdAt: listing.createdAt } }, ws);
+        break;
+      }
+
+      case 'market:list:buy': {
+        const lid = msg.id || '';
+        const listing = marketListings.get(lid);
+        if (!listing) { sendTo(ws, { type:'market:error', message:'Listing not found.' }); break; }
+        if (listing.sellerKey === ukey) { sendTo(ws, { type:'market:error', message:'Cannot buy your own listing.' }); break; }
+        if (listing.buyers.includes(ukey)) { sendTo(ws, { type:'market:error', message:'Already purchased.' }); break; }
+        if (listing.price > 0 && acc.balance < listing.price) { sendTo(ws, { type:'market:error', message:`Need $${listing.price.toFixed(2)}.` }); break; }
+        if (listing.price > 0) {
+          acc.balance -= listing.price;
+          const seller = accounts.get(listing.sellerKey);
+          if (seller) {
+            seller.balance += listing.price;
+            await saveAccount(seller, listing.sellerKey);
+            const sw = getWsByUsername(seller.username);
+            if (sw) sendTo(sw, { type:'market:sale', buyerName: acc.username, listingTitle: listing.title, amount: listing.price, newBalance: seller.balance });
+          }
+          await saveAccount(acc, ukey);
+        }
+        listing.buyers.push(ukey);
+        await saveListing(listing);
+        sendTo(ws, { type:'market:list:bought', id: lid, content: listing.content, newBalance: acc.balance });
+        broadcastLeaderboard(); break;
+      }
+
+      case 'market:list:delete': {
+        const lid = msg.id || '';
+        const listing = marketListings.get(lid);
+        if (!listing) { sendTo(ws, { type:'market:error', message:'Not found.' }); break; }
+        if (listing.sellerKey !== ukey && !isAdmin(acc.username)) { sendTo(ws, { type:'market:error', message:'Not your listing.' }); break; }
+        marketListings.delete(lid);
+        await deleteListing(lid);
+        sendTo(ws, { type:'market:list:deleted', id: lid });
+        broadcast({ type:'market:list:removed', id: lid }, ws); break;
+      }
+
+      case 'market:bounty:submit': {
+        const lid = msg.id || '';
+        const listing = marketListings.get(lid);
+        if (!listing || listing.bounty <= 0) { sendTo(ws, { type:'market:error', message:'No bounty on this listing.' }); break; }
+        const submission = (msg.submission || '').trim().slice(0, 10000);
+        if (!submission) { sendTo(ws, { type:'market:error', message:'Empty submission.' }); break; }
+        const seller = accounts.get(listing.sellerKey);
+        if (!seller) break;
+        const sw = getWsByUsername(seller.username);
+        if (sw) sendTo(sw, { type:'market:bounty:received', listingId: lid, listingTitle: listing.title, fromName: acc.username, fromColor: acc.color, submission, bounty: listing.bounty });
+        sendTo(ws, { type:'market:bounty:submitted', message: `Submitted to ${seller.username}! They'll review and pay if accepted.` });
+        break;
+      }
+
+      case 'market:bounty:pay': {
+        const targetKey = (msg.toUsername || '').toLowerCase();
+        const amount    = parseFloat(msg.amount) || 0;
+        if (amount <= 0 || amount > acc.balance) { sendTo(ws, { type:'market:error', message:'Invalid bounty amount.' }); break; }
+        const target = accounts.get(targetKey);
+        if (!target) { sendTo(ws, { type:'market:error', message:'User not found.' }); break; }
+        acc.balance -= amount;
+        target.balance += amount;
+        await Promise.all([saveAccount(acc, ukey), saveAccount(target, targetKey)]);
+        const tw = getWsByUsername(target.username);
+        if (tw) sendTo(tw, { type:'market:bounty:paid', fromName: acc.username, amount, newBalance: target.balance });
+        sendTo(ws, { type:'market:bounty:pay:ok', toName: target.username, amount, newBalance: acc.balance });
         broadcastLeaderboard(); break;
       }
 
