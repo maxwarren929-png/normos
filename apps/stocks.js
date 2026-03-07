@@ -97,6 +97,11 @@ const StocksApp = {
         tab.addEventListener('click', () => {
           activeTab = tab.dataset.tab;
           selectedId = null;
+          // Update active tab styling
+          wrap.querySelectorAll('.stocks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === activeTab));
+          // Show/hide sector filter
+          const sf = wrap.querySelector('.stocks-sector-filter');
+          if (sf) sf.style.display = activeTab === 'companies' ? 'none' : '';
           renderSidebar();
           renderMain();
         });
@@ -228,8 +233,9 @@ const StocksApp = {
           });
         });
         return;
+      }
 
-      // Stock row click → show detail
+      // Stock row click → show detail (market & portfolio tabs)
       listEl.querySelectorAll('.stock-row[data-id]').forEach(row => {
         row.addEventListener('click', () => {
           selectedId = row.dataset.id;
