@@ -219,6 +219,35 @@ const Network = (() => {
       case 'companies:created':     emit('companies:created',msg); break;
       case 'companies:error':       emit('companies:error',msg); break;
       case 'market:shareholders':   emit('market:shareholders',msg); break;
+
+      // ── NorMarket ─────────────────────────────────────────────────
+      case 'market:list:data':    emit('market:list:data',msg); break;
+      case 'market:list:created': emit('market:list:created',msg); break;
+      case 'market:list:new':     emit('market:list:new',msg); break;
+      case 'market:list:bought':
+        if(typeof Economy!=='undefined' && msg.newBalance !== undefined){ Economy.state.balance=msg.newBalance; Economy.save(); Economy.updateWalletDisplay(); }
+        emit('market:list:bought',msg); break;
+      case 'market:list:deleted': emit('market:list:deleted',msg); break;
+      case 'market:list:removed': emit('market:list:removed',msg); break;
+      case 'market:sale':
+        emit('market:sale',msg);
+        if(typeof OS!=='undefined') OS.notify('🏪','NorMarket Sale',`${msg.buyerName} bought "${msg.listingTitle}" — +$${(msg.amount||0).toFixed(2)}`);
+        if(typeof Economy!=='undefined' && msg.newBalance!==undefined){ Economy.state.balance=msg.newBalance; Economy.save(); Economy.updateWalletDisplay(); }
+        break;
+      case 'market:bounty:received':
+        emit('market:bounty:received',msg);
+        if(typeof OS!=='undefined') OS.notify('🏪','Bounty Submission',`${msg.fromName} submitted work for "${msg.listingTitle}"`);
+        break;
+      case 'market:bounty:submitted': emit('market:bounty:submitted',msg); break;
+      case 'market:bounty:paid':
+        emit('market:bounty:paid',msg);
+        if(typeof Economy!=='undefined' && msg.newBalance!==undefined){ Economy.state.balance=msg.newBalance; Economy.save(); Economy.updateWalletDisplay(); }
+        if(typeof OS!=='undefined') OS.notify('💰','Bounty Paid',`${msg.fromName} paid you $${(msg.amount||0).toFixed(2)}!`);
+        break;
+      case 'market:bounty:pay:ok':
+        if(typeof Economy!=='undefined' && msg.newBalance!==undefined){ Economy.state.balance=msg.newBalance; Economy.save(); Economy.updateWalletDisplay(); }
+        emit('market:bounty:pay:ok',msg); break;
+      case 'market:error': emit('market:error',msg); break;
     }
   };
 
