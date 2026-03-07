@@ -111,6 +111,7 @@ const Economy = (() => {
     const s    = STOCKS.find(s => s.id === stockId);
     const pos  = state.portfolio[stockId];
     if (!s || !pos) return { ok: false, msg: 'You don\'t own this stock.' };
+    if (shares <= 0) return { ok: false, msg: 'Invalid quantity.' };
     if (shares > pos.shares) return { ok: false, msg: `You only own ${pos.shares} shares.` };
 
     const price   = state.prices[stockId];
