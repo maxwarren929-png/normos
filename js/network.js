@@ -68,7 +68,14 @@ const Network = (() => {
         state.bankCreditScore=msg.creditScore||0;
         if(msg.market){state.marketPrices=msg.market.prices||{};state.marketHistory=msg.market.history||{};}
         // Sync Economy from server
-        if(typeof Economy!=='undefined'){ Economy.state.balance=msg.balance||0; Economy.save(); Economy.updateWalletDisplay(); }
+        if(typeof Economy!=='undefined'){
+          Economy.state.balance=msg.balance||0;
+          // Restore portfolio from server so positions survive reconnects/refreshes
+          if(msg.portfolio && typeof msg.portfolio==='object'){
+            Economy.state.portfolio = msg.portfolio;
+          }
+          Economy.save(); Economy.updateWalletDisplay();
+        }
         emit('auth:ok',msg); emit('welcome',msg);
         emit('online:update',state.online);
         emit('leaderboard:rich',{leaderboard:state.leaderboard});
@@ -112,7 +119,21 @@ const Network = (() => {
 
       case 'market:activity': emit('market:activity',msg); break;
       case 'market:trade:ok':
-        if(typeof Economy!=='undefined'){ Economy.state.balance=msg.newBalance; Economy.save(); Economy.updateWalletDisplay(); }
+        if(typeof Economy!=='undefined'){
+          Economy.state.balance=msg.newBalance;
+          // Sync local portfolio so UI shows updated positions
+          if(msg.action==='BUY' && msg.stockId){
+            if(!Economy.state.portfolio[msg.stockId]) Economy.state.portfolio[msg.stockId]={shares:0,avgCost:0};
+            const _pos=Economy.state.portfolio[msg.stockId];
+            const _ns=_pos.shares+msg.shares;
+            _pos.avgCost=((_pos.avgCost*_pos.shares)+(msg.price*msg.shares))/_ns;
+            _pos.shares=_ns;
+          } else if(msg.action==='SELL' && msg.stockId){
+            const _pos=Economy.state.portfolio[msg.stockId];
+            if(_pos){ _pos.shares-=msg.shares; if(_pos.shares<=0) delete Economy.state.portfolio[msg.stockId]; }
+          }
+          Economy.save(); Economy.updateWalletDisplay();
+        }
         emit('market:trade:ok',msg); break;
       case 'market:trade:fail': emit('market:trade:fail',msg); break;
 
