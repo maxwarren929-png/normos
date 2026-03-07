@@ -557,6 +557,13 @@ const LoansApp = {
     }
 
     render();
+
+    // Clean up Network listeners and loan timer when the bank window closes
+    EventBus.on('window:closed', ({ appId }) => {
+      if (appId !== 'bank' && appId !== 'loans') return;
+      if (wrap._cleanup) wrap._cleanup();
+    });
+
     return wrap;
   }
 };
