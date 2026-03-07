@@ -29,7 +29,6 @@ const OS = (() => {
     files:       { title:'File Explorer',   icon:'📁',  width:760,  height:500, create:()=>FileExplorerApp.create()},
     browser:     { title:'NormBrowser',     icon:'🌐',  width:900,  height:580, create:()=>BrowserApp.create()     },
     sysmon:      { title:'System Monitor',  icon:'📊',  width:640,  height:500, create:()=>SysmonApp.create()      },
-    settings:    { title:'Settings',        icon:'⚙️',  width:680,  height:500, create:()=>SettingsApp.create()    },
     snake:       { title:'Snake',           icon:'🐍',  width:380,  height:420, minWidth:380, minHeight:420, resizable:false, create:()=>SnakeApp.create() },
     chat:        { title:'NormChat',        icon:'💬',  width:800,  height:520, create:()=>ChatApp.create()        },
     messaging:   { title:'Messaging',       icon:'💬',  width:800,  height:520, create:()=>ChatApp.create()        },
