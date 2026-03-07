@@ -25,21 +25,21 @@ const StocksApp = {
       if (typeof Network !== 'undefined' && Network.isConnected()) Network.send({ type:'companies:get' });
     };
     if (typeof Network !== 'undefined') {
-      Network.on('companies:data', (msg) => {
+      const onCompaniesData = (msg) => {
         if (!wrap.isConnected) return;
         playerCompanies = msg.companies || [];
         myCompany       = msg.myCompany || null;
         shareholdersCache = msg.shareholders || {};
         if (activeTab === 'companies') { renderSidebar(); renderMain(); }
-      });
-      Network.on('companies:update', (msg) => {
+      };
+      const onCompaniesUpdate = (msg) => {
         if (!wrap.isConnected) return;
         if (msg.companies) playerCompanies = msg.companies;
         if (msg.myCompany !== undefined) myCompany = msg.myCompany;
         if (msg.shareholders) Object.assign(shareholdersCache, msg.shareholders);
         if (activeTab === 'companies') { renderSidebar(); renderMain(); }
-      });
-      Network.on('companies:created', (msg) => {
+      };
+      const onCompaniesCreated = (msg) => {
         if (!wrap.isConnected) return;
         myCompany = msg.company; companyCreateMode = false;
         // Sync balance and portfolio from server after IPO capital deducted
@@ -51,18 +51,23 @@ const StocksApp = {
         activeTab = 'companies'; selectedId = msg.company.ticker;
         renderSidebar(); renderMain();
         if (typeof OS !== 'undefined') OS.notify('🚀', 'IPO', `${msg.company.name} (${msg.company.ticker}) is live!`);
-      });
-      Network.on('companies:error', (msg) => {
+      };
+      const onCompaniesError = (msg) => {
         if (!wrap.isConnected) return;
         const errEl = wrap.querySelector('#comp-err');
         if (errEl) { errEl.textContent = msg.message || 'Error'; }
         else if (typeof OS !== 'undefined') OS.notify('❌', 'Company Error', msg.message || 'Error');
-      });
-      Network.on('market:shareholders', (msg) => {
+      };
+      const onCompanyShareholders = (msg) => {
         if (!wrap.isConnected) return;
         shareholdersCache[msg.ticker] = msg.shareholders;
         if (activeTab === 'companies' && selectedId === msg.ticker) renderMain();
-      });
+      };
+      Network.on('companies:data',      onCompaniesData);
+      Network.on('companies:update',    onCompaniesUpdate);
+      Network.on('companies:created',   onCompaniesCreated);
+      Network.on('companies:error',     onCompaniesError);
+      Network.on('market:shareholders', onCompanyShareholders);
     }
     setTimeout(fetchCompanies, 600);
 
@@ -643,12 +648,17 @@ const StocksApp = {
         }
       });
 
-      // Request shareholders from server
+      // Request shareholders from server — remove any previous pending listener first
       if (typeof Network !== 'undefined' && Network.isConnected()) {
+        if (wrap._pendingShareholdersHandler) {
+          Network.off('market:shareholders', wrap._pendingShareholdersHandler);
+          wrap._pendingShareholdersHandler = null;
+        }
         Network.send({ type: 'companies:shareholders', ticker: id });
         const onShareholders = (msg) => {
           if (msg.ticker !== id) return;
           Network.off('market:shareholders', onShareholders);
+          wrap._pendingShareholdersHandler = null;
           const shEl = mainEl.querySelector(`#sd-shareholders-${id}`);
           if (!shEl) return;
           const top = (msg.shareholders || []).slice(0, 5);
@@ -668,6 +678,7 @@ const StocksApp = {
             `).join('')}
           `;
         };
+        wrap._pendingShareholdersHandler = onShareholders;
         Network.on('market:shareholders', onShareholders);
       } else {
         const shEl = mainEl.querySelector(`#sd-shareholders-${id}`);
@@ -698,13 +709,26 @@ const StocksApp = {
       Network.on('market:trade:ok',   onTradeOk);
       Network.on('market:trade:fail', onTradeFail);
       wrap._cleanup_stocks = () => {
-        Network.off('market:trade:ok',   onTradeOk);
-        Network.off('market:trade:fail', onTradeFail);
+        Network.off('market:trade:ok',     onTradeOk);
+        Network.off('market:trade:fail',   onTradeFail);
+        Network.off('companies:data',      onCompaniesData);
+        Network.off('companies:update',    onCompaniesUpdate);
+        Network.off('companies:created',   onCompaniesCreated);
+        Network.off('companies:error',     onCompaniesError);
+        Network.off('market:shareholders', onCompanyShareholders);
+        if (wrap._pendingShareholdersHandler) {
+          Network.off('market:shareholders', wrap._pendingShareholdersHandler);
+          wrap._pendingShareholdersHandler = null;
+        }
       };
     }
 
-    // Clean up listener when window closes
-    EventBus.on('window:closed', () => { if (unsubscribe) { unsubscribe(); unsubscribe = null; } if (wrap._cleanup_stocks) wrap._cleanup_stocks(); });
+    // Clean up listener when the stocks window closes (not any other window)
+    EventBus.on('window:closed', ({ appId }) => {
+      if (appId !== 'stocks') return;
+      if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+      if (wrap._cleanup_stocks) wrap._cleanup_stocks();
+    });
 
     return wrap;
   }
