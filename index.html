@@ -99,16 +99,16 @@
   <script src="apps/normsheet.js"></script>
   <script src="apps/calculator.js"></script>
   <script src="apps/clock.js"></script>
-  <script src="apps/music.js"></script>
   <script src="apps/calendar.js"></script>
   <script src="apps/imagedrop.js"></script>
   <script src="apps/texteditor.js"></script>
   <script src="apps/stocks.js"></script>
   <script src="apps/sysmon.js"></script>
   <script src="apps/leaderboard.js"></script>
+  <script src="apps/snake.js"></script>
 
   <!-- v4.0 apps -->
-  <script src="apps/normtok.js"></script>
+  <script src="apps/normarket.js"></script>
   <script src="apps/friends.js"></script><!-- Social (merged Profile+Friends+Messaging) -->
   <script src="apps/loans.js"></script>  <!-- Central Bank -->
   <script src="apps/miner.js"></script>
@@ -117,18 +117,14 @@
   <script src="apps/appstore.js"></script><!-- Merged Hub+Shop -->
   <!-- Browser page additions (after browser.js) -->
   <script src="apps/browser_pages.js"></script>
-  <!-- v5.0 apps: Multi-Bank System + Player Companies -->
-  <script src="apps/banking.js"></script>
-  <script src="apps/companies.js"></script>
-
   <!-- Stubs for removed/upcoming apps (prevents crashes) -->
   <script>
-    // Removed apps — stub so any old references don't crash
     const MailApp     = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">💬</div><div>NormMail removed — use Messaging in Social app</div>'; return d; }};
     const NotepadApp  = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);font-size:1rem;flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">✏️</div><div>Use NormEdit instead</div><button onclick="OS.apps.open(\'texteditor\')" style="margin-top:8px;padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer">Open NormEdit</button>'; return d; }};
     const NewsApp     = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">📰</div><div>NormNews — Coming Soon</div>'; return d; }};
-    const SnakeApp    = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">🐍</div><div>Snake — Coming Soon</div>'; return d; }};
-    const ShopApp     = AppStoreApp; // Shop redirects to hub
+    const BankingApp   = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">🏛️</div><div>NormBanks — use NormBank app</div><button onclick="OS.apps.open(\'bank\')" style="margin-top:8px;padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer">Open NormBank</button>'; return d; }};
+    const CompaniesApp = { create: () => { const d=document.createElement('div'); d.style.cssText='display:flex;align-items:center;justify-content:center;height:100%;color:var(--text2);flex-direction:column;gap:8px;'; d.innerHTML='<div style="font-size:2rem">🏢</div><div>NormCorp Exchange — use NormStock</div><button onclick="OS.apps.open(\'stocks\')" style="margin-top:8px;padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:5px;cursor:pointer">Open NormStock</button>'; return d; }};
+    const ShopApp      = AppStoreApp;
   </script>
 
   <!-- Economy + OS (must be last) -->
