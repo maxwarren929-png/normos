@@ -172,7 +172,8 @@ const ClockApp = {
     });
 
     // Clean up on close
-    EventBus.on('window:closed', () => {
+    EventBus.on('window:closed', ({ appId }) => {
+      if (appId !== 'clock') return;
       clearInterval(clockInt);
       cancelAnimationFrame(swAnim);
       clearInterval(timerInterval);
