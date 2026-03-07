@@ -212,23 +212,32 @@ const LeaderboardApp = {
     };
 
     // ── Admin modal ────────────────────────────────────────────────────────────
+    let adminUsersCache = [];
+
     const showAdminModal = (targetId, targetName) => {
       if (!isAdmin) return;
       const modal = wrap.querySelector('#lb-modal');
       const inner = wrap.querySelector('#lb-modal-inner');
 
+      // Find real name from cache if available
+      const cached = adminUsersCache.find(u => u.username.toLowerCase() === targetName.toLowerCase());
+      const realName = cached?.realName || '(not loaded)';
+      const balance  = cached?.balance != null ? `$${cached.balance.toFixed(2)}` : '—';
+
       inner.innerHTML = `
-        <div style="font-size:0.9rem;font-weight:bold;margin-bottom:12px;color:#f59e0b;">👑 Admin: ${esc(targetName)}</div>
+        <div style="font-size:0.9rem;font-weight:bold;margin-bottom:4px;color:#f59e0b;">👑 Admin: ${esc(targetName)}</div>
+        <div style="font-size:0.68rem;color:var(--text3);margin-bottom:12px;">Real name: <strong style="color:var(--text2)">${esc(realName)}</strong> · Balance: <strong style="color:#4ade80">${balance}</strong></div>
         <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;">
           <div>
-            <div style="font-size:0.7rem;color:var(--text3);margin-bottom:4px;">Set Balance</div>
+            <div style="font-size:0.7rem;color:var(--text3);margin-bottom:4px;">Set Balance ($)</div>
             <div style="display:flex;gap:6px;">
-              <input id="admin-balance-input" type="number" min="0" placeholder="New balance" value=""
+              <input id="admin-balance-input" type="number" min="0" placeholder="New balance"
                 style="flex:1;background:var(--bg1);border:1px solid var(--border);border-radius:4px;padding:6px 8px;color:var(--text1);font-size:0.78rem;outline:none;font-family:inherit;" />
               <button id="admin-setbal-btn" style="padding:6px 10px;background:#f59e0b;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:0.72rem;font-weight:bold;">Set</button>
             </div>
           </div>
-          <button id="admin-kick-btn" style="padding:8px;background:#f87171;color:#000;border:none;border-radius:4px;cursor:pointer;font-size:0.78rem;font-weight:bold;">🚪 Kick Player</button>
+          <button id="admin-kick-btn" style="padding:8px;background:#374151;color:#fff;border:1px solid var(--border);border-radius:4px;cursor:pointer;font-size:0.75rem;font-weight:bold;">🚪 Kick Player</button>
+          <button id="admin-delete-btn" style="padding:8px;background:#7f1d1d;color:#f87171;border:1px solid #f8717166;border-radius:4px;cursor:pointer;font-size:0.75rem;font-weight:bold;">🗑️ Delete Account</button>
         </div>
         <div id="admin-msg" style="font-size:0.72rem;min-height:18px;color:var(--text3);margin-bottom:8px;"></div>
         <button id="admin-close" style="width:100%;padding:7px;background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer;font-family:inherit;">Close</button>
@@ -255,8 +264,57 @@ const LeaderboardApp = {
         Network.adminSetBalance(targetName, val);
         inner.querySelector('#admin-msg').textContent = `Balance set to $${val.toFixed(2)}.`;
         inner.querySelector('#admin-msg').style.color = '#4ade80';
-        setTimeout(() => { modal.style.display = 'none'; }, 1000);
+        setTimeout(() => { modal.style.display = 'none'; }, 1200);
       });
+
+      inner.querySelector('#admin-delete-btn').addEventListener('click', () => {
+        if (!confirm(`PERMANENTLY DELETE account "${targetName}"?\n\nThis cannot be undone. All their data will be erased.`)) return;
+        if (typeof Network !== 'undefined') Network.send({ type:'admin:deleteaccount', username:targetName });
+        inner.querySelector('#admin-msg').textContent = `Deleting ${targetName}...`;
+        inner.querySelector('#admin-msg').style.color = '#f87171';
+        setTimeout(() => { modal.style.display = 'none'; }, 1200);
+      });
+    };
+
+    // ── All users panel (admin only) ──────────────────────────────────────────
+    const showAllUsersModal = () => {
+      if (!isAdmin) return;
+      const modal = wrap.querySelector('#lb-modal');
+      const inner = wrap.querySelector('#lb-modal-inner');
+
+      const renderUsers = () => {
+        if (!adminUsersCache.length) {
+          inner.innerHTML = `<div style="font-size:0.82rem;font-weight:700;color:#f59e0b;margin-bottom:10px;">👑 All Accounts</div>
+            <div style="font-size:0.7rem;color:var(--text3)">Loading...</div>
+            <button id="auc-close" style="margin-top:12px;width:100%;padding:7px;background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer;">Close</button>`;
+          inner.querySelector('#auc-close').addEventListener('click', () => { modal.style.display = 'none'; });
+          return;
+        }
+        inner.innerHTML = `
+          <div style="font-size:0.82rem;font-weight:700;color:#f59e0b;margin-bottom:8px;">👑 All Accounts (${adminUsersCache.length})</div>
+          <div style="max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-bottom:10px;">
+            ${adminUsersCache.map(u => `
+              <div style="display:flex;align-items:center;gap:6px;padding:6px 8px;background:var(--bg1);border-radius:5px;border:1px solid var(--border);font-size:0.68rem;">
+                <span style="width:10px;height:10px;border-radius:50%;background:${u.online?'#4ade80':'#6b7280'};flex-shrink:0;"></span>
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:600;color:var(--text1)">${esc(u.username)}</div>
+                  <div style="color:var(--text3);font-size:0.6rem">${esc(u.realName)}</div>
+                </div>
+                <div style="text-align:right;flex-shrink:0;">
+                  <div style="color:#4ade80;font-family:var(--font-mono)">$${Number(u.balance).toFixed(0)}</div>
+                  ${u.hasLoan ? '<div style="color:#f87171;font-size:0.58rem">LOAN</div>' : ''}
+                </div>
+              </div>`).join('')}
+          </div>
+          <button id="auc-close" style="width:100%;padding:7px;background:transparent;border:1px solid var(--border);color:var(--text2);border-radius:4px;cursor:pointer;">Close</button>
+        `;
+        inner.querySelector('#auc-close').addEventListener('click', () => { modal.style.display = 'none'; });
+      };
+
+      modal.style.display = 'flex';
+      renderUsers();
+
+      if (typeof Network !== 'undefined') Network.send({ type:'admin:getusers' });
     };
 
     // ── Network events ────────────────────────────────────────────────────────
@@ -266,6 +324,18 @@ const LeaderboardApp = {
       isAdmin = s.isAdmin || false;
       onlineUsers = (data.online || []).filter(u => u.username !== 'daemon.norm');
       if (data.leaderboard) { leaderboard = data.leaderboard.filter(u => u.username !== 'daemon.norm'); renderBoard(); }
+      // Inject All Users button for admin
+      if (isAdmin && !wrap.querySelector('#lb-allusers-btn')) {
+        const header = wrap.querySelector('.lb-header');
+        if (header) {
+          const allBtn = document.createElement('button');
+          allBtn.id = 'lb-allusers-btn';
+          allBtn.textContent = '👑 All Users';
+          allBtn.style.cssText = 'padding:4px 10px;background:#f59e0b22;color:#f59e0b;border:1px solid #f59e0b44;border-radius:4px;cursor:pointer;font-size:0.68rem;font-weight:600;margin-left:6px;';
+          allBtn.addEventListener('click', showAllUsersModal);
+          header.appendChild(allBtn);
+        }
+      }
     };
 
     const onLeaderboard = (data) => {
@@ -285,6 +355,15 @@ const LeaderboardApp = {
     };
     const onAdminOk  = (data) => { if(typeof OS!=='undefined') OS.notify('👑','Admin',data.message||'Done'); };
     const onAdminErr = (data) => { if(typeof OS!=='undefined') OS.notify('👑','Admin Error',data.message||'Error'); };
+    const onAdminUsers = (data) => {
+      adminUsersCache = data.users || [];
+      // If all-users modal is open, re-render it
+      const modal = wrap.querySelector('#lb-modal');
+      if (modal?.style.display !== 'none') {
+        const inner = wrap.querySelector('#lb-modal-inner');
+        if (inner?.querySelector('#auc-close')) showAllUsersModal();
+      }
+    };
 
     Network.on('welcome',           onWelcome);
     Network.on('leaderboard:rich',  onLeaderboard);
@@ -294,6 +373,7 @@ const LeaderboardApp = {
     Network.on('virus:fail',        onVirusFail);
     Network.on('admin:ok',          onAdminOk);
     Network.on('admin:error',       onAdminErr);
+    Network.on('admin:users',       onAdminUsers);
 
     // Refresh button
     wrap.querySelector('#lb-refresh-btn').addEventListener('click', () => {
@@ -326,6 +406,7 @@ const LeaderboardApp = {
       Network.off('virus:fail', onVirusFail);
       Network.off('admin:ok', onAdminOk);
       Network.off('admin:error', onAdminErr);
+      Network.off('admin:users', onAdminUsers);
       clearInterval(refreshTimer);
     };
 
