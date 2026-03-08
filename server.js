@@ -88,6 +88,8 @@ const bankDeposits    = { noot:{}, elite:{}, comm:{} };
 const playerCompanies = {};
 const companyShares   = {};
 const marketListings  = new Map(); // id → listing
+const arenaRooms     = new Map(); // id → room (open lobby rooms)
+const arenaGames     = new Map(); // id → game (in-progress games)
 
 async function loadAll() {
   const accs = await pool.query('SELECT * FROM accounts');
@@ -898,6 +900,151 @@ wss.on('connection', (ws) => {
         broadcastLeaderboard(); break;
       }
 
+      // ── NORMARENA ─────────────────────────────────────────────────────────
+      case 'arena:rooms:get': {
+        const rooms = [...arenaRooms.values()].map(r => ({
+          id: r.id, gameType: r.gameType, stake: r.stake,
+          hostName: r.hostName, hostColor: r.hostColor,
+        }));
+        sendTo(ws, { type:'arena:rooms', rooms }); break;
+      }
+
+      case 'arena:create': {
+        const gameType = ['chess','checkers'].includes(msg.game) ? msg.game : 'chess';
+        const stake    = Math.max(1, parseFloat(msg.stake) || 100);
+        if (acc.balance < stake) { sendTo(ws, { type:'arena:error', message:'Insufficient funds.' }); break; }
+        // Cancel any existing room/game for this user
+        arenaRooms.forEach((r, id) => { if (r.hostKey === ukey) arenaRooms.delete(id); });
+        const roomId = uid();
+        arenaRooms.set(roomId, { id: roomId, gameType, stake, hostKey: ukey, hostName: acc.username, hostColor: acc.color });
+        sendTo(ws, { type:'arena:waiting', roomId });
+        broadcast({ type:'arena:rooms', rooms: [...arenaRooms.values()].map(r=>({id:r.id,gameType:r.gameType,stake:r.stake,hostName:r.hostName,hostColor:r.hostColor})) });
+        break;
+      }
+
+      case 'arena:join': {
+        const room = arenaRooms.get(msg.roomId);
+        if (!room) { sendTo(ws, { type:'arena:error', message:'Room not found.' }); break; }
+        if (room.hostKey === ukey) { sendTo(ws, { type:'arena:error', message:'Cannot join your own room.' }); break; }
+        if (acc.balance < room.stake) { sendTo(ws, { type:'arena:error', message:'Insufficient funds.' }); break; }
+        const host = accounts.get(room.hostKey);
+        if (!host || host.balance < room.stake) { sendTo(ws, { type:'arena:error', message:'Host has insufficient funds.' }); break; }
+        const hostWs = getWsByUsername(host.username);
+        if (!hostWs) { sendTo(ws, { type:'arena:error', message:'Host went offline.' }); arenaRooms.delete(room.id); break; }
+        // Deduct stakes
+        acc.balance   -= room.stake;
+        host.balance  -= room.stake;
+        await Promise.all([saveAccount(acc, ukey), saveAccount(host, room.hostKey)]);
+        arenaRooms.delete(room.id);
+        // Assign colors randomly
+        const hostIsWhite = Math.random() < 0.5;
+        const wKey = hostIsWhite ? room.hostKey : ukey;
+        const bKey = hostIsWhite ? ukey : room.hostKey;
+        const wName = hostIsWhite ? host.username : acc.username;
+        const bName = hostIsWhite ? acc.username : host.username;
+        const board = room.gameType === 'chess' ? arenaChessInit() : arenaCheckersInit();
+        const gameId = uid();
+        const game = {
+          id: gameId, gameType: room.gameType, stake: room.stake,
+          players: { w: wName, b: bName }, keys: { w: wKey, b: bKey },
+          colors: { w: hostIsWhite ? host.color : acc.color, b: hostIsWhite ? acc.color : host.color },
+          board, turn: 'w',
+          timers: { w: 600, b: 600 }, lastTimerTick: Date.now(),
+          enPassant: null, castling: { wK:true, wQ:true, bK:true, bQ:true },
+          moveLog: [], lastMove: null, inCheck: false,
+        };
+        arenaGames.set(gameId, game);
+        // Map userkeys to gameId for quick lookup
+        arenaGames.set('player:'+wKey, gameId);
+        arenaGames.set('player:'+bKey, gameId);
+        const gameSnapshot = arenaPublicGame(game);
+        sendTo(ws,     { type:'arena:start', game: gameSnapshot });
+        sendTo(hostWs, { type:'arena:start', game: gameSnapshot });
+        broadcast({ type:'arena:rooms', rooms: [...arenaRooms.values()].map(r=>({id:r.id,gameType:r.gameType,stake:r.stake,hostName:r.hostName,hostColor:r.hostColor})) });
+        broadcastLeaderboard();
+        break;
+      }
+
+      case 'arena:cancel': {
+        arenaRooms.forEach((r, id) => { if (r.hostKey === ukey) arenaRooms.delete(id); });
+        broadcast({ type:'arena:rooms', rooms: [...arenaRooms.values()].map(r=>({id:r.id,gameType:r.gameType,stake:r.stake,hostName:r.hostName,hostColor:r.hostColor})) });
+        break;
+      }
+
+      case 'arena:move': {
+        const gid = arenaGames.get('player:'+ukey);
+        const game = gid ? arenaGames.get(gid) : null;
+        if (!game) { sendTo(ws, { type:'arena:error', message:'No active game.' }); break; }
+        const myCol = game.keys.w === ukey ? 'w' : 'b';
+        if (game.turn !== myCol) { sendTo(ws, { type:'arena:error', message:'Not your turn.' }); break; }
+        const move = msg.move;
+        if (!move || typeof move.fr !== 'number') { sendTo(ws, { type:'arena:error', message:'Invalid move.' }); break; }
+        // Tick timers
+        const now = Date.now();
+        game.timers[myCol] = Math.max(0, game.timers[myCol] - Math.floor((now - game.lastTimerTick) / 1000));
+        game.lastTimerTick = now;
+        if (game.timers[myCol] <= 0) { await arenaEndGame(game, myCol === 'w' ? 'b' : 'w', 'timeout'); break; }
+        // Apply move
+        const newBoard = game.gameType === 'chess'
+          ? arenaChessApply(game.board, move)
+          : arenaCheckersApply(game.board, move);
+        if (!newBoard) { sendTo(ws, { type:'arena:error', message:'Illegal move.' }); break; }
+        game.board = newBoard;
+        game.lastMove = move;
+        const cols  = ['a','b','c','d','e','f','g','h'];
+        const rows  = ['8','7','6','5','4','3','2','1'];
+        game.moveLog.push(`${myCol==='w'?'⬜':'⬛'} ${cols[move.fc]}${rows[move.fr]}→${cols[move.tc]}${rows[move.tr]}`);
+        if (game.moveLog.length > 80) game.moveLog.shift();
+        // Update en passant / castling for chess
+        if (game.gameType === 'chess') {
+          game.enPassant = move.special === 'double' ? [move.tr + (myCol==='w'?1:-1), move.tc] : null;
+          if (move.special === 'castleK') { game.castling[myCol+'K'] = false; game.castling[myCol+'Q'] = false; }
+          if (move.special === 'castleQ') { game.castling[myCol+'K'] = false; game.castling[myCol+'Q'] = false; }
+          if (game.board[move.tr][move.tc] === myCol+'K') { game.castling[myCol+'K'] = false; game.castling[myCol+'Q'] = false; }
+          if (game.board[move.tr][move.tc] === myCol+'R') { if (move.fc === 7) game.castling[myCol+'K'] = false; if (move.fc === 0) game.castling[myCol+'Q'] = false; }
+        }
+        // Checkers multi-jump: if jumped and more jumps available, stay on same player's turn
+        let nextTurn = myCol === 'w' ? 'b' : 'w';
+        if (game.gameType === 'checkers' && move.cap) {
+          const moreJumps = arenaCheckersJumpsFrom(game.board, move.tr, move.tc, myCol);
+          if (moreJumps.length > 0) nextTurn = myCol;
+        }
+        game.turn = nextTurn;
+        // Check for game end
+        const oppCol = nextTurn;
+        const ended = game.gameType === 'chess'
+          ? arenaChessCheckEnd(game, oppCol)
+          : arenaCheckersCheckEnd(game, oppCol);
+        if (ended) break;
+        // Check / inCheck flag for chess
+        if (game.gameType === 'chess') game.inCheck = arenaChessInCheck(game.board, oppCol);
+        const snap = arenaPublicGame(game);
+        const wWs = getWsByUsername(game.players.w);
+        const bWs = getWsByUsername(game.players.b);
+        if (wWs) sendTo(wWs, { type:'arena:state', game: snap });
+        if (bWs) sendTo(bWs, { type:'arena:state', game: snap });
+        break;
+      }
+
+      case 'arena:resign': {
+        const gid = arenaGames.get('player:'+ukey);
+        const game = gid ? arenaGames.get(gid) : null;
+        if (!game) break;
+        const myCol = game.keys.w === ukey ? 'w' : 'b';
+        const winnCol = myCol === 'w' ? 'b' : 'w';
+        await arenaEndGame(game, winnCol, 'resign');
+        break;
+      }
+
+      case 'arena:timeout': {
+        const gid = arenaGames.get('player:'+ukey);
+        const game = gid ? arenaGames.get(gid) : null;
+        if (!game) break;
+        const myCol = game.keys.w === ukey ? 'w' : 'b';
+        if (game.timers[myCol] <= 0) await arenaEndGame(game, myCol === 'w' ? 'b' : 'w', 'timeout');
+        break;
+      }
+
       case 'ping': sendTo(ws, { type:'pong', ts:Date.now() }); break;
     }
   });
@@ -908,6 +1055,9 @@ wss.on('connection', (ws) => {
       console.log(`[-] ${c.username} disconnected`);
       const a = accounts.get(c.username.toLowerCase());
       if (a) await saveAccount(a, c.username.toLowerCase()).catch(() => {});
+      arenaHandleDisconnect(c.username.toLowerCase());
+      // Cancel open rooms for this user
+      arenaRooms.forEach((r, id) => { if (r.hostKey === c.username.toLowerCase()) arenaRooms.delete(id); });
       broadcast({ type:'user:leave', id:c.id, username:c.username });
       broadcastLeaderboard();
     }
@@ -916,6 +1066,184 @@ wss.on('connection', (ws) => {
 
   ws.on('error', () => { clients.delete(ws); });
 });
+
+// ── NORMARENA HELPERS ─────────────────────────────────────────────────────────
+function arenaPublicGame(g) {
+  return {
+    id: g.id, gameType: g.gameType, stake: g.stake,
+    players: g.players, colors: g.colors,
+    board: g.board, turn: g.turn,
+    timers: { ...g.timers },
+    enPassant: g.enPassant, castling: g.castling,
+    moveLog: g.moveLog.slice(-30), lastMove: g.lastMove, inCheck: g.inCheck || false,
+  };
+}
+
+async function arenaEndGame(game, winnerCol, reason) {
+  if (!game || game.ended) return;
+  game.ended = true;
+  const winnerKey  = winnerCol ? game.keys[winnerCol]  : null;
+  const loserCol   = winnerCol ? (winnerCol==='w'?'b':'w') : null;
+  const loserKey   = loserCol  ? game.keys[loserCol]   : null;
+  const winnerName = winnerCol ? game.players[winnerCol] : null;
+  const wWs = getWsByUsername(game.players.w);
+  const bWs = getWsByUsername(game.players.b);
+  let wBal, bBal;
+  if (winnerKey) {
+    const winAcc = accounts.get(winnerKey);
+    const loseAcc = loserKey ? accounts.get(loserKey) : null;
+    if (winAcc)  { winAcc.balance  += game.stake * 2; await saveAccount(winAcc, winnerKey); wBal = winAcc.balance; }
+    if (loseAcc) { await saveAccount(loseAcc, loserKey); bBal = loseAcc.balance; }
+  } else {
+    // Draw: refund both
+    const wAcc = accounts.get(game.keys.w);
+    const bAcc = accounts.get(game.keys.b);
+    if (wAcc) { wAcc.balance += game.stake; await saveAccount(wAcc, game.keys.w); }
+    if (bAcc) { bAcc.balance += game.stake; await saveAccount(bAcc, game.keys.b); }
+  }
+  // Cleanup
+  arenaGames.delete(game.id);
+  arenaGames.delete('player:'+game.keys.w);
+  arenaGames.delete('player:'+game.keys.b);
+  const snap = arenaPublicGame(game);
+  const wAcc2 = accounts.get(game.keys.w);
+  const bAcc2 = accounts.get(game.keys.b);
+  const payload = { type:'arena:end', game: snap, winner: winnerName, reason,
+    newBalance: null };
+  if (wWs) { const p = { ...payload, newBalance: wAcc2?.balance }; sendTo(wWs, p); }
+  if (bWs) { const p = { ...payload, newBalance: bAcc2?.balance }; sendTo(bWs, p); }
+  broadcastLeaderboard();
+  const resultMsg = { id:++msgCounter, username:'daemon.norm', color:'#f59e0b',
+    text: `🏆 Arena: ${winnerName||'Draw'} ${winnerName?'beat ':''} ${winnerName ? (game.players.w===winnerName?game.players.b:game.players.w) : `${game.players.w} vs ${game.players.b}`} at ${game.gameType} (${reason}) — $${(game.stake*2).toFixed(2)} pot`, ts: ts() };
+  channels.get('#general').push(resultMsg);
+  broadcast({ type:'chat:message', channel:'#general', message: resultMsg });
+}
+
+// Handle disconnect for active arena games
+function arenaHandleDisconnect(ukey) {
+  const gid = arenaGames.get('player:'+ukey);
+  if (!gid) return;
+  const game = arenaGames.get(gid);
+  if (!game || game.ended) return;
+  const myCol  = game.keys.w === ukey ? 'w' : 'b';
+  const oppCol = myCol === 'w' ? 'b' : 'w';
+  const oppWs  = getWsByUsername(game.players[oppCol]);
+  const oppAcc = accounts.get(game.keys[oppCol]);
+  if (oppAcc) oppAcc.balance += game.stake * 2;
+  game.ended = true;
+  arenaGames.delete(game.id);
+  arenaGames.delete('player:'+game.keys.w);
+  arenaGames.delete('player:'+game.keys.b);
+  if (oppAcc) saveAccount(oppAcc, game.keys[oppCol]).catch(()=>{});
+  if (oppWs)  sendTo(oppWs, { type:'arena:opponent:left', newBalance: oppAcc?.balance });
+  broadcastLeaderboard();
+}
+
+// Chess board helpers (server-side legal move validation)
+function arenaChessInit() {
+  const b = Array(8).fill(null).map(()=>Array(8).fill(null));
+  const o = ['R','N','B','Q','K','B','N','R'];
+  for (let c=0;c<8;c++) { b[0][c]='b'+o[c]; b[7][c]='w'+o[c]; b[1][c]='bP'; b[6][c]='wP'; }
+  return b;
+}
+function arenaCheckersInit() {
+  const b = Array(8).fill(null).map(()=>Array(8).fill(null));
+  for (let r=0;r<3;r++) for (let c=0;c<8;c++) if((r+c)%2===1) b[r][c]='b';
+  for (let r=5;r<8;r++) for (let c=0;c<8;c++) if((r+c)%2===1) b[r][c]='w';
+  return b;
+}
+function arenaChessApply(board, move) {
+  const nb = board.map(r=>[...r]);
+  const p = nb[move.fr][move.fc]; if (!p) return null;
+  nb[move.tr][move.tc]=p; nb[move.fr][move.fc]=null;
+  if (move.special==='ep') nb[move.fr][move.tc]=null;
+  if (move.special==='castleK') { nb[move.tr][5]=nb[move.tr][7]; nb[move.tr][7]=null; }
+  if (move.special==='castleQ') { nb[move.tr][3]=nb[move.tr][0]; nb[move.tr][0]=null; }
+  const col=p[0];
+  if (p[1]==='P') { if(move.tr===0&&col==='w') nb[0][move.tc]='wQ'; if(move.tr===7&&col==='b') nb[7][move.tc]='bQ'; }
+  return nb;
+}
+function arenaCheckersApply(board, move) {
+  const nb = board.map(r=>[...r]);
+  const p = nb[move.fr][move.fc]; if (!p) return null;
+  nb[move.tr][move.tc]=p; nb[move.fr][move.fc]=null;
+  if (move.cap) nb[move.cap[0]][move.cap[1]]=null;
+  if (nb[move.tr][move.tc]==='w'&&move.tr===0) nb[move.tr][move.tc]='wK';
+  if (nb[move.tr][move.tc]==='b'&&move.tr===7) nb[move.tr][move.tc]='bK';
+  return nb;
+}
+function arenaChessInCheck(board, col) {
+  let kr=-1,kc=-1;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++) if(board[r][c]===col+'K'){kr=r;kc=c;}
+  const opp=col==='w'?'b':'w';
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++) if(board[r][c]&&board[r][c][0]===opp) {
+    if(arenaChessAttacks(board,r,c,kr,kc)) return true;
+  }
+  return false;
+}
+function arenaChessAttacks(board,fr,fc,tr,tc) {
+  const p=board[fr][fc]; if(!p) return false;
+  const type=p[1],col=p[0];
+  const dr=tr-fr,dc=tc-fc,abr=Math.abs(dr),abc=Math.abs(dc);
+  if(type==='P') { const dir=col==='w'?-1:1; return dr===dir&&abc===1; }
+  if(type==='N') return (abr===2&&abc===1)||(abr===1&&abc===2);
+  if(type==='K') return abr<=1&&abc<=1;
+  if(type==='R'||type==='Q') {
+    if(dr===0){ const s=dc>0?1:-1; for(let c=fc+s;c!==tc;c+=s) if(board[fr][c]) return false; return true; }
+    if(dc===0){ const s=dr>0?1:-1; for(let r=fr+s;r!==tr;r+=s) if(board[r][fc]) return false; return true; }
+    if(type==='R') return false;
+  }
+  if(type==='B'||type==='Q') {
+    if(abr===abc){ const sr=dr>0?1:-1,sc=dc>0?1:-1; let r=fr+sr,c=fc+sc; while(r!==tr){ if(board[r][c]) return false; r+=sr;c+=sc; } return true; }
+  }
+  return false;
+}
+function arenaChessCheckEnd(game, col) {
+  // Simplified: check if no legal moves (checkmate/stalemate) — just check if king exists
+  let kExists = false;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++) if(game.board[r][c]===col+'K') kExists=true;
+  if (!kExists) { arenaEndGame(game, col==='w'?'b':'w', 'checkmate'); return true; }
+  return false;
+}
+function arenaCheckersJumpsFrom(board,r,c,col) {
+  const piece=board[r][c]; if(!piece) return [];
+  const king=piece.length>1, opp=col==='w'?'b':'w';
+  const dirs=col==='w'?[[-1,-1],[-1,1]]:[[1,-1],[1,1]];
+  const allDirs=king?[[-1,-1],[-1,1],[1,-1],[1,1]]:dirs;
+  const jumps=[];
+  for(const [dr,dc] of allDirs){
+    const mr=r+dr,mc=c+dc,jr=r+2*dr,jc=c+2*dc;
+    if(mr>=0&&mr<8&&mc>=0&&mc<8&&jr>=0&&jr<8&&jc>=0&&jc<8)
+      if(board[mr][mc]&&board[mr][mc][0]===opp&&!board[jr][jc]) jumps.push({fr:r,fc:c,tr:jr,tc:jc,cap:[mr,mc]});
+  }
+  return jumps;
+}
+function arenaCheckersCheckEnd(game, col) {
+  let pieces=0;
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++) if(game.board[r][c]&&game.board[r][c][0]===col) pieces++;
+  if(pieces===0){ arenaEndGame(game, col==='w'?'b':'w', 'no pieces'); return true; }
+  // Check if no moves
+  const hasMoves = arenaCheckersHasMoves(game.board, col);
+  if(!hasMoves){ arenaEndGame(game, col==='w'?'b':'w', 'no moves'); return true; }
+  return false;
+}
+function arenaCheckersHasMoves(board, col) {
+  const opp=col==='w'?'b':'w';
+  for(let r=0;r<8;r++) for(let c=0;c<8;c++){
+    if(!board[r][c]||board[r][c][0]!==col) continue;
+    const king=board[r][c].length>1;
+    const dirs=col==='w'?[[-1,-1],[-1,1]]:[[1,-1],[1,1]];
+    const allDirs=king?[[-1,-1],[-1,1],[1,-1],[1,1]]:dirs;
+    for(const [dr,dc] of allDirs){
+      const nr=r+dr,nc=c+dc;
+      if(nr>=0&&nr<8&&nc>=0&&nc<8){
+        if(!board[nr][nc]) return true;
+        if(board[nr][nc][0]===opp){const jr=r+2*dr,jc=c+2*dc;if(jr>=0&&jr<8&&jc>=0&&jc<8&&!board[jr][jc]) return true;}
+      }
+    }
+  }
+  return false;
+}
 
 // ── LOGIN COMPLETE ────────────────────────────────────────────────────────────
 function completeLogin(ws, client, acc, ukey) {
