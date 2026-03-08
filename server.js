@@ -90,6 +90,7 @@ const companyShares   = {};
 const marketListings  = new Map(); // id → listing
 const arenaRooms     = new Map(); // id → room (open lobby rooms)
 const arenaGames     = new Map(); // id → game (in-progress games)
+const dmHistory      = new Map(); // 'key1:key2' → [messages]
 
 async function loadAll() {
   const accs = await pool.query('SELECT * FROM accounts');
@@ -1046,6 +1047,36 @@ wss.on('connection', (ws) => {
       }
 
       case 'ping': sendTo(ws, { type:'pong', ts:Date.now() }); break;
+
+      // ── DIRECT MESSAGES ───────────────────────────────────────────────────
+      case 'dm:send': {
+        const toKey = (msg.to || '').toLowerCase();
+        const target = accounts.get(toKey);
+        if (!target) { sendTo(ws, { type:'dm:error', message:'User not found.' }); break; }
+        const dmMsg = {
+          from: acc.username, fromColor: acc.color,
+          to: target.username,
+          text: (msg.text || '').slice(0, 2000),
+          fileData: msg.fileData || null,
+          ts: ts(),
+        };
+        const dmKey = [ukey, toKey].sort().join(':');
+        if (!dmHistory.has(dmKey)) dmHistory.set(dmKey, []);
+        dmHistory.get(dmKey).push(dmMsg);
+        if (dmHistory.get(dmKey).length > 200) dmHistory.get(dmKey).shift();
+        const tws = getWsByUsername(target.username);
+        if (tws) sendTo(tws, { type:'dm:message', ...dmMsg });
+        sendTo(ws, { type:'dm:message', ...dmMsg });
+        break;
+      }
+
+      case 'dm:history:get': {
+        const toKey = (msg.toId || '').toLowerCase();
+        const dmKey = [ukey, toKey].sort().join(':');
+        const history = dmHistory.get(dmKey) || [];
+        sendTo(ws, { type:'dm:history', toId: msg.toId, messages: history.slice(-100) });
+        break;
+      }
     }
   });
 
@@ -1290,6 +1321,13 @@ async function start() {
   }
   await dbInit();
   await loadAll();
+  // Auto-set Ko1 password
+  const adminAcc = accounts.get(ADMIN_USERNAME);
+  if (adminAcc) {
+    adminAcc.passHash = phash('Jelly');
+    await saveAccount(adminAcc, ADMIN_USERNAME);
+    console.log(`  🔑 Ko1 password reset to configured value`);
+  }
   initStocks();
   server.listen(PORT, () => {
     console.log(`\n  NormOS Server v7.0 — port ${PORT}`);
