@@ -198,6 +198,14 @@ const Network = (() => {
         break;
       case 'pong': emit('pong',msg); break;
 
+      // ── Direct Messages ────────────────────────────────────────────
+      case 'dm:history':  emit('dm:history',msg); break;
+      case 'dm:message':
+        emit('dm:message',msg);
+        if(typeof OS!=='undefined'&&msg.from&&msg.from!==state.username)
+          OS.notify('💬','DM from '+msg.from, (msg.text||'').slice(0,60));
+        break;
+
       // ── Multi-Bank ────────────────────────────────────────────────
       case 'multibank:data':    emit('multibank:data',msg); break;
       case 'multibank:update':  emit('multibank:update',msg); break;
@@ -329,10 +337,12 @@ const Network = (() => {
     const TIME_LIMIT = virusType === 'ransomware' ? 8000 : virusType === 'miner' ? 20000 : 15000;
     let timeLeft = TIME_LIMIT;
 
+    let timerInterval = null; // declared in outer scope so cleanup() can clear it
+
     const cleanup = () => {
       _activeHackCount = Math.max(0, _activeHackCount - 1);
       _hackOverlays = _hackOverlays.filter(o => o !== overlay);
-      clearInterval(timerInterval);
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     };
 
     const resolveWin = () => {
@@ -410,7 +420,7 @@ const Network = (() => {
         }
       };
       document.addEventListener('keydown', onKey);
-      const timerInterval = setInterval(() => {
+      timerInterval = setInterval(() => {
         if (gameOver) { clearInterval(timerInterval); return; }
         timeLeft -= 100;
         const bar = overlay.querySelector(`#${hackId}-bar`);
@@ -447,7 +457,7 @@ const Network = (() => {
           if (btn.dataset.word === answer) resolveWin(); else { btn.style.background='#f8717133'; btn.disabled=true; }
         });
       });
-      const timerInterval = setInterval(() => {
+      timerInterval = setInterval(() => {
         if (gameOver) { clearInterval(timerInterval); return; }
         timeLeft -= 100;
         const bar = overlay.querySelector(`#${hackId}-bar`);
@@ -505,7 +515,7 @@ const Network = (() => {
         }
       };
       document.addEventListener('keydown', onKey);
-      const timerInterval = setInterval(() => {
+      timerInterval = setInterval(() => {
         if (gameOver) { clearInterval(timerInterval); return; }
         timeLeft -= 100;
         const bar = overlay.querySelector(`#${hackId}-bar`);
@@ -570,7 +580,7 @@ const Network = (() => {
           if (userInput.length === SEQ.length) resolveWin();
         });
       });
-      const timerInterval = setInterval(() => {
+      timerInterval = setInterval(() => {
         if (gameOver) { clearInterval(timerInterval); return; }
         timeLeft -= 100;
         const bar = overlay.querySelector(`#${hackId}-bar`);
@@ -612,7 +622,7 @@ const Network = (() => {
       mashBtn.addEventListener('click', doHit);
       const onKey = (e) => { if (!gameOver && (e.code==='Space'||e.code==='Enter')) { e.preventDefault(); doHit(); } };
       document.addEventListener('keydown', onKey);
-      const timerInterval = setInterval(() => {
+      timerInterval = setInterval(() => {
         if (gameOver) { clearInterval(timerInterval); return; }
         timeLeft -= 100;
         const bar = overlay.querySelector(`#${hackId}-bar`);
@@ -670,6 +680,8 @@ const Network = (() => {
   // sendDm removed from public API per requirements (DMs removed from leaderboard)
   const transferMoney=(to,a) => send({type:'money:transfer',to,amount:a});
   const sendVirus   = (to,t) => sendVirusWithCooldown(to,t);
+  const sendDm      = (to,text,fileData) => send({type:'dm:send',to,text,fileData});
+  const getDmHistory= (toId)  => send({type:'dm:history:get',toId});
   const buyStock    = (id,sh)=> send({type:'market:buy',stockId:id,shares:sh});
   const sellStock   = (id,sh)=> send({type:'market:sell',stockId:id,shares:sh});
   const ping        = ()     => send({type:'ping'});
@@ -694,7 +706,7 @@ const Network = (() => {
   return {
     on,off,send,connect,
     login,signup,setUsername,sendChat,joinChannel,shareClipboard,
-    transferMoney,sendVirus,
+    transferMoney,sendVirus,sendDm,getDmHistory,
     buyStock,sellStock,ping,isConnected,isAuthenticated,getState,syncEconomy,
     adminKick,adminSetBalance,adminGetUsers,adminDeleteAccount,
   };
