@@ -44,6 +44,7 @@ const OS = (() => {
     leaderboard: { title:'Leaderboard',     icon:'🏆',  width:900,  height:560, create:()=>LeaderboardApp.create() },
     // ── v4.0 apps ─────────────────────────────────────────────────────────
     normarket:   { title:'NorMarket',       icon:'🏪',  width:960,  height:600, create:()=>NorMarketApp.create()   },
+    arena:       { title:'NormArena',       icon:'🏆',  width:1000, height:640, create:()=>ArenaApp.create()        },
     social:      { title:'Social',          icon:'👥',  width:720,  height:560, create:()=>SocialApp.create()      },
     bank:        { title:'NormBank',        icon:'🏦',  width:680,  height:580, create:()=>LoansApp.create()       },
     loans:       { title:'NormBank',        icon:'🏦',  width:680,  height:580, create:()=>LoansApp.create(),       hidden:true },
@@ -86,6 +87,7 @@ const OS = (() => {
     { cls:'ok',   text:'Hacking: 60s cooldown system active' },
     { cls:'ok',   text:'NorMarket: player marketplace initialized' },
     { cls:'ok',   text:'NorMarket: listings, paywalls, bounties ready' },
+    { cls:'ok',   text:'NormArena: chess + checkers PvP with money stakes online' },
     { cls:'ok',   text:'NormMiner: payout feedback enabled' },
     { cls:'ok',   text:'Social: Profile + Friends + Messaging merged' },
     { cls:'ok',   text:'NormCasino: RNG seeded (house advantage: confirmed)' },
@@ -425,7 +427,7 @@ const OS = (() => {
       'normsheet','calculator','clock','calendar',
       'imagedrop','stocks','leaderboard',
       'normarket','social','bank','miner',
-      'casino','settings','hub',
+      'casino','arena','settings','hub',
     ];
     const iconApps = state.desktopApps;
 
@@ -535,7 +537,7 @@ const OS = (() => {
     'normsheet','calculator','clock','calendar',
     'imagedrop','stocks','leaderboard',
     'normarket','social','bank','miner',
-    'casino','settings','hub',
+    'casino','arena','settings','hub',
   ];
 
   if (!state.desktopApps) state.desktopApps = [...DEFAULT_DESKTOP_APPS];
